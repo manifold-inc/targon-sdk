@@ -145,7 +145,7 @@ class _Object:
         if prefix not in _Object._prefix_to_type:
             raise ValidationError(
                 f"Unknown object prefix: '{prefix}'. "
-                f"Available prefixes: {", ".join(sorted(_Object._prefix_to_type.keys()))}"
+                f'Available prefixes: {", ".join(sorted(_Object._prefix_to_type.keys()))}'
             )
         return _Object._prefix_to_type[prefix]
 
