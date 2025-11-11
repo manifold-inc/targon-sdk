@@ -103,29 +103,6 @@ targon deploy examples/gettin_started/getting_started.py
 
 ---
 
-## Publishing to PyPI
-
-PyPI releases are automated through the **Publish Python package** GitHub Actions workflow.
-
-1. **Configure secrets**  
-   Create a `PYPI_API_TOKEN` secret on the repository with publish permissions for the `targon` package.
-
-2. **Cut a release**  
-   Draft a GitHub release (or tag) and click **Publish release**. This triggers the workflow automatically.
-
-3. **Pipeline steps**  
-   The workflow:
-   - Installs the build toolchain with `pip install build`
-   - Builds both sdist and wheel via `python -m build`
-   - Uploads artifacts with `pypa/gh-action-pypi-publish`
-
-4. **Manual re-run**  
-   Navigate to **Actions → Publish Python package → Run workflow** if the job needs to be retried.
-
-Ensure your local environment mirrors the dependency versions defined in `pyproject.toml` (particularly the gRPC family) before publishing.
-
----
-
 ## Development Notes
 
 - The SDK mirrors common serverless-style patterns: decorator-based registration, cloudpickle serialization, and runtime-provisioned images.
