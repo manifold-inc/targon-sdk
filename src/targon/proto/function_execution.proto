@@ -1,0 +1,90 @@
+syntax = "proto3";
+
+package targon.runtime;
+
+// Function execution service for Targon containers
+service FunctionExecutor {
+    // Execute a function with serialized arguments
+    rpc Execute(ExecuteRequest) returns (ExecuteResponse);
+}
+
+// Health check service for Knative probes
+service Health {
+    // Check if the service is healthy
+    rpc Check(HealthCheckRequest) returns (HealthCheckResponse);
+    
+    // Watch for health status changes
+    rpc Watch(HealthCheckRequest) returns (stream HealthCheckResponse);
+}
+
+// Request to execute a function
+message ExecuteRequest {
+    // Unique request ID for tracking
+    string request_id = 1;
+    
+    // Serialized arguments (cloudpickle)
+    bytes args = 2;
+    
+    // Serialized keyword arguments (cloudpickle)
+    bytes kwargs = 3;
+    
+    // Optional execution context
+    string input_id = 4;
+    string function_call_id = 5;
+    
+    // Execution timeout in milliseconds (0 = no timeout)
+    int64 timeout_ms = 6;
+    
+    // Custom metadata / headers
+    map<string, string> metadata = 7;
+}
+
+// Response from function execution
+message ExecuteResponse {
+    // Execution status
+    enum Status {
+        SUCCESS = 0;
+        ERROR = 1;
+        TIMEOUT = 2;
+        CANCELLED = 3;
+        RATE_LIMITED = 4;
+    }
+    
+    // Echo request ID for tracking
+    string request_id = 1;
+    
+    Status status = 2;
+    
+    // Serialized result (cloudpickle) - present on SUCCESS
+    bytes result = 3;
+    
+    // Error message - present on ERROR
+    string error = 4;
+    
+    // Stack trace - present on ERROR
+    string traceback = 5;
+    
+    // Execution time in milliseconds
+    int64 execution_time_ms = 6;
+    
+    // Response metadata
+    map<string, string> metadata = 7;
+}
+
+// Health check request
+message HealthCheckRequest {
+    string service = 1;
+}
+
+// Health check response
+message HealthCheckResponse {
+    enum ServingStatus {
+        UNKNOWN = 0;
+        SERVING = 1;
+        NOT_SERVING = 2;
+        SERVICE_UNKNOWN = 3;
+    }
+    
+    ServingStatus status = 1;
+}
+
