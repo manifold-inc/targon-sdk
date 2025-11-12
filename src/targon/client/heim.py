@@ -51,7 +51,12 @@ class AsyncHeimClient(AsyncBaseHTTPClient):
                     "Accept": "application/x-ndjson",
                     "Content-Type": "application/json",
                 },
-                timeout=ClientTimeout(total=30*60, sock_read=30),
+                timeout=ClientTimeout(
+                    total=30 * 60,
+                    # Allow long pauses between streamed lines (e.g., exporting/pushing layers)
+                    # while still enforcing an overall cap for the request.
+                    sock_read=None,
+                ),
             ) as response:
                 if response.status != 200:
                     try:
