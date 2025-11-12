@@ -95,6 +95,20 @@ class _StubApp:
         return decorator
 
 
+class _StubCompute:
+    """Stub Compute class with tier name constants."""
+    # CPU Tiers
+    CPU_SMALL = "cpu-small"
+    CPU_MEDIUM = "cpu-medium"
+    CPU_LARGE = "cpu-large"
+    CPU_XL = "cpu-xl"
+
+    # GPU Tiers
+    H200_SMALL = "h200-small"
+    H200_MEDIUM = "h200-medium"
+    H200_LARGE = "h200-large"
+    H200_XL = "h200-xl"
+
 def _stub_decorator(*args, **kwargs):
     def decorator(func):
         return func
@@ -112,11 +126,13 @@ web_server = _stub_decorator
 
 Image = _StubImage
 App = _StubApp
+Compute = _StubCompute
 
 __version__ = "0.1.0"
 __all__ = [
     "Image",
     "App",
+    "Compute",
     "fastapi_endpoint",
     "asgi_app",
     "wsgi_app",
