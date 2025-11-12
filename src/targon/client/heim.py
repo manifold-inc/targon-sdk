@@ -51,7 +51,7 @@ class AsyncHeimClient(AsyncBaseHTTPClient):
                     "Accept": "application/x-ndjson",
                     "Content-Type": "application/json",
                 },
-                timeout=ClientTimeout(total=600, sock_read=30),
+                timeout=ClientTimeout(total=30*60, sock_read=30),
             ) as response:
                 if response.status != 200:
                     try:
@@ -67,7 +67,7 @@ class AsyncHeimClient(AsyncBaseHTTPClient):
         except APIError:
             raise
         except TimeoutError as e:
-            raise TimeoutError(f"Build request timed out: {str(e)}", timeout=600) from e
+            raise TimeoutError(f"Build request timed out: {str(e)}", timeout=30*60) from e
         except ClientError as e:
             raise NetworkError(f"Network error during build: {str(e)}", cause=e) from e
         except TargonError:
