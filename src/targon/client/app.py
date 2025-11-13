@@ -115,9 +115,7 @@ class AsyncAppClient(AsyncBaseHTTPClient):
             raise ValidationError("App ID cannot be empty", field="app_id")
 
         endpoint = GET_APP_STATUS_ENDPOINT.format(app_id=app_id)
-        print(endpoint)
         result = await self._async_get(endpoint)
-        print(result)
         if not isinstance(result, dict):
             raise TargonError(f"Unexpected response format: {type(result).__name__}")
 
