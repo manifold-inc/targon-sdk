@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 import dataclasses
 import asyncio
+import sys
 import time
 import inspect
 from pathlib import Path
@@ -87,6 +88,47 @@ async def _create_all_objects(
         console_instance.success(
             f"Created {function_count} function{'s' if function_count != 1 else ''}"
         )
+        
+async def _check_function_deployment_status(
+    client: Client,
+    running_app: RunningApp,
+    console_instance: Optional[Console] = None,
+) -> bool:
+    timeout = 300
+    poll_interval = 5
+    start_time = time.time()
+
+    if console_instance:
+        console_instance.substep(f"Awaiting deployment (timeout: {timeout}s)")
+
+    while True:
+        elapsed_time = time.time() - start_time
+        
+        status_response: AppStatusResponse = await client.async_app.get_app_status(
+            app_id=running_app.app_id
+        )
+
+        non_deployed = [
+            (func_name, func_status.status)
+            for func_name, func_status in status_response.functions.items()
+            if func_status.status != "deployed"
+        ]
+
+        if not non_deployed:
+            return True
+
+        if elapsed_time >= timeout:
+            if console_instance:
+                console_instance.error(f"Deployment timeout after {timeout}s")
+                for func_name, status in non_deployed:
+                    console_instance.info(f"{func_name}: {status}")
+            return False
+
+        if console_instance:
+            remaining_time = timeout - elapsed_time
+            console_instance.substep(f"Checking again in {poll_interval}s ({remaining_time:.0f}s remaining)")
+        
+        await asyncio.sleep(poll_interval)
 
 
 async def _publish_app(
@@ -238,17 +280,28 @@ async def run_app(
         console_instance.success("Initialized")
 
     await deploy_app(app, client, console_instance, name, app_file_path, running_app)
+    
+    if console_instance:
+        console_instance.step("Checking deployment status")
 
-    try:
-        if console_instance:
-            console_instance.step("Executing the function")
-        yield app
+    all_deployed = await _check_function_deployment_status(client, running_app, console_instance)
 
-    except Exception as e:
-        if console_instance:
-            console_instance.error(f"Failed to run app: {e}")
-        raise
+    if all_deployed:
+        try:
+            if console_instance:
+                console_instance.success("All functions deployed")
+                console_instance.step("Executing the function")
+            yield app
 
-    finally:
+        except Exception as e:
+            if console_instance:
+                console_instance.error(f"Failed to run app: {e}")
+            raise
+
+        finally:
+            if console_instance:
+                console_instance.success("Local execution completed")
+    else:
         if console_instance:
-            console_instance.success("Local execution completed")
+            console_instance.info(f"View status: targon app status {running_app.app_id}")
+        sys.exit(1)
