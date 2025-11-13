@@ -1,6 +1,7 @@
 import requests
 import aiohttp
 from requests.adapters import HTTPAdapter, Retry
+from targon.cli.auth import get_api_key
 from targon.client.inventory import AsyncInventoryClient
 from targon.core.config import Config
 from targon.client.heim import AsyncHeimClient
@@ -101,7 +102,7 @@ class Client:
     def from_env(cls):
         import os
 
-        api_key = os.getenv("TARGON_API_KEY")
+        api_key = get_api_key()
         if not api_key:
             raise ValueError("TARGON_API_KEY environment variable not set")
 
