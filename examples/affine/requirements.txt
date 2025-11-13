@@ -1,0 +1,7 @@
+httpx
+openai
+pyyaml
+certifi
+aiobotocore
+aiohttp
+botocore

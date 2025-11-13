@@ -174,7 +174,7 @@ def _get_click_command_for_local_entrypoint(app, entrypoint):
         # Use asyncio.run for the entire execution context
         async def _run_with_app():
             # @TODO:get the app name from the object and replace with display name
-            with console("display_name") as c:
+            with console(app.name) as c:
                 async with run_app(
                     app=app,
                     client=ctx.obj["client"],
