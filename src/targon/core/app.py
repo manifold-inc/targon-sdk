@@ -191,10 +191,21 @@ class _App(BaseApp):
 
     @asynccontextmanager
     async def run(self) -> AsyncIterator["_App"]:
+        import inspect
         from targon.core.executor import run_app
+        from targon.core.console import Console
 
-        async with run_app(self):
-            yield self
+        frame = inspect.currentframe()
+        if frame and frame.f_back and frame.f_back.f_back:
+            caller_frame = frame.f_back.f_back
+            app_file_path = caller_frame.f_globals.get('__file__')
+        else:
+            app_file_path = None
+        
+        c = Console(self.name)
+        with c:
+            async with run_app(app=self, console_instance=c, app_file_path=app_file_path):
+                yield self
 
 
 App = _App
