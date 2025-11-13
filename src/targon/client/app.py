@@ -10,6 +10,7 @@ from targon.client.constants import (
     LIST_APPS_ENDPOINT,
     DELETE_APP_ENDPOINT,
     LIST_FUNCTIONS_ENDPOINT,
+    GET_FUNCTION_BY_ID_ENDPOINT,
 )
 
 
@@ -31,6 +32,7 @@ class AppResponse:
 
 @dataclass(slots=True)
 class FunctionStatus:
+    name: str
     uid: str
     url: str
     status: str
@@ -81,6 +83,19 @@ class ListFunctionsResponse:
     total: int
 
 
+@dataclass(slots=True)
+class FunctionDetailResponse:
+    uid: str
+    app_id: str
+    name: str
+    module: Optional[str]
+    qualname: Optional[str]
+    serialized: Optional[str]
+    image_id: Optional[str]
+    created_at: str
+    updated_at: str
+
+
 class AsyncAppClient(AsyncBaseHTTPClient):
     """Async client for app registration and management."""
 
@@ -126,12 +141,13 @@ class AsyncAppClient(AsyncBaseHTTPClient):
             )
 
         functions = {
-            name: FunctionStatus(
+            func_id: FunctionStatus(
+                name=func.get("name", ""),
                 uid=func.get("uid", ""),
                 url=func.get("url", ""),
                 status=func.get("status", ""),
             )
-            for name, func in functions_data.items()
+            for func_id, func in functions_data.items()
         }
 
         return AppStatusResponse(
@@ -221,4 +237,28 @@ class AsyncAppClient(AsyncBaseHTTPClient):
             app_id=result.get("app_id", app_id),
             functions=functions,
             total=result.get("total", len(functions)),
+        )
+
+    async def get_function(self, function_id: str, app_id: Optional[str] = None) -> FunctionDetailResponse:
+        """Get detailed information about a specific function by its UID."""
+        if not function_id or not function_id.strip():
+            raise ValidationError("Function ID cannot be empty", field="function_id")
+
+        # Use the direct function lookup endpoint
+        endpoint = GET_FUNCTION_BY_ID_ENDPOINT.format(function_id=function_id)
+        result = await self._async_get(endpoint)
+
+        if not isinstance(result, dict):
+            raise TargonError(f"Unexpected response format: {type(result).__name__}")
+
+        return FunctionDetailResponse(
+            uid=result.get("uid", function_id),
+            app_id=result.get("app_id", ""),
+            name=result.get("name", ""),
+            module=result.get("module"),
+            qualname=result.get("qualname"),
+            serialized=result.get("serialized"),
+            image_id=result.get("image_id"),
+            created_at=result.get("created_at", ""),
+            updated_at=result.get("updated_at", ""),
         )

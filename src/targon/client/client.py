@@ -8,6 +8,7 @@ from targon.client.heim import AsyncHeimClient
 from targon.client.functions import AsyncFunctionsClient
 from targon.client.app import AsyncAppClient
 from targon.client.publish import AsyncPublishClient
+from targon.client.logs import AsyncLogsClient
 
 
 class Client:
@@ -31,6 +32,7 @@ class Client:
         self._async_functions = None
         self._async_app = None
         self._async_publish = None
+        self._async_logs = None
 
     def _init_session(self) -> requests.Session:
         session = requests.Session()
@@ -97,6 +99,12 @@ class Client:
         if self._async_publish is None:
             self._async_publish = AsyncPublishClient(self)
         return self._async_publish
+
+    @property
+    def async_logs(self) -> AsyncLogsClient:
+        if self._async_logs is None:
+            self._async_logs = AsyncLogsClient(self)
+        return self._async_logs
 
     @classmethod
     def from_env(cls):

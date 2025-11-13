@@ -18,6 +18,10 @@ GET_APP_STATUS_ENDPOINT = f"/{API_VERSION}/apps/{{app_id}}"
 LIST_APPS_ENDPOINT = f"/{API_VERSION}/apps"
 DELETE_APP_ENDPOINT = f"/{API_VERSION}/apps/{{app_id}}"
 LIST_FUNCTIONS_ENDPOINT = f"/{API_VERSION}/apps/{{app_id}}/functions"
+GET_FUNCTION_BY_ID_ENDPOINT = f"/{API_VERSION}/functions/{{function_id}}"
 
 # Publish Service
 PUBLISH_ENDPOINT = f"/{API_VERSION}/apps/deploy"
+
+# Logs Service
+LOGS_ENDPOINT = f"/{API_VERSION}/serverless/logs"
