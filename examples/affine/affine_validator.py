@@ -17,8 +17,12 @@ AFFINE_REQUIREMENTS = AFFINE_DIR / "requirements.txt"
 affine_image = (
     targon.Image.from_registry(
         "nvidia/cuda:12.8.0-devel-ubuntu22.04",
-        add_python="3.11",
+        add_python="3.12",
     )
+    .pip_install("vllm==0.10.2",
+        "torch==2.8.0",
+        "huggingface_hub==0.35.0",
+        "hf_transfer")
     .pip_install_from_requirements(str(AFFINE_REQUIREMENTS))
     .env({"HF_HUB_ENABLE_HF_TRANSFER": "1"})
     .add_local_dir(str(AFFINE_ENV_SOURCE), "/workspace/affine_env")
@@ -54,8 +58,8 @@ def _coerce_json(value: Any) -> Any:
         return str(value)
 
 
-@app.function(resource=targon.Compute.H200_SMALL, timeout=900)
-async def run_env(
+@app.function(resource=targon.Compute.H200_MEDIUM, timeout=900, min_replicas=0, max_concurrency=0)
+def run_env(
     model_name: str,
     env: str,
     n: int,
@@ -69,80 +73,88 @@ async def run_env(
     from statistics import mean
 
     sys.path.insert(0, "/workspace")
-    import affine_env  # noqa: F401
-    from affine_env.env import Actor
-    from vllm import LLM, SamplingParams  # type: ignore[import-not-found]
 
     task_type = _normalize_env(env)
 
+    from vllm import LLM, SamplingParams  # type: ignore[import-not-found]
+
     llm = LLM(
         model=model_name,
-        tensor_parallel_size=1,
+        revision="main",
         trust_remote_code=True,
-        gpu_memory_utilization=0.95,
+        tensor_parallel_size=2,
+        gpu_memory_utilization=0.85,
+        download_dir="/root/.cache/huggingface",
     )
 
-    async def offline_llm(
-        *,
-        prompt: str,
-        model: str,
-        temperature: float,
-        timeout: float,
-        base_url: str,
-        api_key: str | None,
-        seed: int | None,
-        **_: Any,
-    ) -> str:
-        params = SamplingParams(
-            temperature=temperature,
-            top_p=0.95,
-            max_tokens=max_new_tokens,
-            seed=seed,
+    async def _run_evaluations() -> Dict[str, Any]:
+        # Import inside async function so event loop is available
+        import affine_env  # noqa: F401
+        from affine_env.env import Actor
+
+        async def offline_llm(
+            *,
+            prompt: str,
+            model: str,
+            temperature: float,
+            timeout: float,
+            base_url: str,
+            api_key: str | None,
+            seed: int | None,
+            **_: Any,
+        ) -> str:
+            params = SamplingParams(
+                temperature=temperature,
+                top_p=0.95,
+                max_tokens=max_new_tokens,
+                seed=seed,
+            )
+            loop = asyncio.get_running_loop()
+
+            def _generate() -> str:
+                outputs = llm.generate([prompt], sampling_params=params, use_tqdm=True)
+                if not outputs:
+                    raise RuntimeError("vLLM returned no outputs")
+                generations = outputs[0].outputs
+                if not generations:
+                    raise RuntimeError("vLLM returned empty generations")
+                return generations[0].text.strip()
+
+            return await loop.run_in_executor(None, _generate)
+
+        actor = Actor(llm_fn=offline_llm)
+
+        rollouts: list[Dict[str, Any]] = []
+        scores: list[float] = []
+
+        for _ in range(n):
+            result = await actor.evaluate(
+                task_type=task_type,
+                model=model_name,
+                base_url="offline://vllm",
+                timeout=600,
+                temperature=temperature,
+            )
+            rollouts.append(_coerce_json(result))
+            scores.append(float(result.get("score", 0.0)))
+
+        successes = sum(1 for score in scores if score > 0)
+        avg_reward = mean(scores) if scores else 0.0
+        success_rate = successes / len(scores) if scores else 0.0
+
+        return _coerce_json(
+            {
+            "model_name": model_name,
+            "env": task_type,
+            "total_samples": len(rollouts),
+            "avg_reward": avg_reward,
+            "success_rate": success_rate,
+            "timestamp": time.time(),
+            "rollouts": rollouts,
+            }
         )
-        loop = asyncio.get_running_loop()
 
-        def _generate() -> str:
-            outputs = llm.generate([prompt], sampling_params=params, use_tqdm=False)
-            if not outputs:
-                raise RuntimeError("vLLM returned no outputs")
-            generations = outputs[0].outputs
-            if not generations:
-                raise RuntimeError("vLLM returned empty generations")
-            return generations[0].text.strip()
-
-        return await loop.run_in_executor(None, _generate)
-
-    actor = Actor(llm_fn=offline_llm)
-
-    rollouts: list[Dict[str, Any]] = []
-    scores: list[float] = []
-
-    for _ in range(n):
-        result = await actor.evaluate(
-            task_type=task_type,
-            model=model_name,
-            base_url="offline://vllm",
-            timeout=600,
-            temperature=temperature,
-        )
-        rollouts.append(_coerce_json(result))
-        scores.append(float(result.get("score", 0.0)))
-
-    successes = sum(1 for score in scores if score > 0)
-    avg_reward = mean(scores) if scores else 0.0
-    success_rate = successes / len(scores) if scores else 0.0
-
-    return _coerce_json(
-        {
-        "model_name": model_name,
-        "env": task_type,
-        "total_samples": len(rollouts),
-        "avg_reward": avg_reward,
-        "success_rate": success_rate,
-        "timestamp": time.time(),
-        "rollouts": rollouts,
-        }
-    )
+    return asyncio.run(_run_evaluations())
 
 
 @app.local_entrypoint()
@@ -179,4 +191,3 @@ async def main(
 
     print(json.dumps(summary, indent=2))
     return result
-
