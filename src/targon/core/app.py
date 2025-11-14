@@ -61,6 +61,7 @@ class _App(BaseApp):
         resource: str = Compute.CPU_SMALL,
         min_replicas: int = 1,
         max_replicas: int = 3,
+        max_concurrency: int = 10,
         timeout: int = 300,
         **kwargs: Any,
     ) -> Callable[[Any], _Function]:
@@ -128,6 +129,7 @@ class _App(BaseApp):
                 resource_name=resource,
                 min_replicas=min_replicas,
                 max_replicas=max_replicas,
+                max_concurrency=max_concurrency,
                 timeout=timeout,
                 **kwargs,
             )
