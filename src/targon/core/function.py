@@ -401,19 +401,20 @@ class _Function(_Object, type_prefix="fnc"):
             )
         return self._raw_f(*args, **kwargs)
 
-    async def _call_function(self, *args: Any, **kwargs: Any) -> Any:
+    async def _call_function(self, *args: Any, timeout: int | None = None, **kwargs: Any) -> Any:
         invocation = await _Invocation.create(
             function=self,
             args=args,
             kwargs=kwargs,
+            timeout=timeout,
         )
         return await invocation.run_function()
 
     @live_method
-    async def remote(self, *args: Any, **kwargs: Any) -> Any:
+    async def remote(self, *args: Any, timeout: int | None = None, **kwargs: Any) -> Any:
         """Execute the function remotely on Targon infrastructure."""
         self._check_no_web_url("remote")
-        return await self._call_function(*args, **kwargs)
+        return await self._call_function(*args, timeout=timeout, **kwargs)
 
     def map(self, iterable: Any) -> Any:
         """Map the function over an iterable, executing remotely for each item."""
