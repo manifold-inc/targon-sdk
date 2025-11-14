@@ -58,7 +58,7 @@ def _coerce_json(value: Any) -> Any:
         return str(value)
 
 
-@app.function(resource=targon.Compute.H200_SMALL, timeout=900)
+@app.function(resource=targon.Compute.H200_MEDIUM, timeout=900, min_replicas=0, max_concurrency=0)
 def run_env(
     model_name: str,
     env: str,
@@ -76,20 +76,22 @@ def run_env(
 
     task_type = _normalize_env(env)
 
+    from vllm import LLM, SamplingParams  # type: ignore[import-not-found]
+
+    llm = LLM(
+        model=model_name,
+        revision="main",
+        trust_remote_code=True,
+        tensor_parallel_size=2,
+        gpu_memory_utilization=0.85,
+        download_dir="/root/.cache/huggingface",
+    )
+
     async def _run_evaluations() -> Dict[str, Any]:
         # Import inside async function so event loop is available
         import affine_env  # noqa: F401
         from affine_env.env import Actor
-        from vllm import LLM, SamplingParams  # type: ignore[import-not-found]
 
-        llm = LLM(
-            model=model_name,
-            revision="main",
-            trust_remote_code=True,
-            tensor_parallel_size=1,
-            gpu_memory_utilization=0.95,
-            download_dir="/root/.cache/huggingface",
-        )
         async def offline_llm(
             *,
             prompt: str,
@@ -110,7 +112,7 @@ def run_env(
             loop = asyncio.get_running_loop()
 
             def _generate() -> str:
-                outputs = llm.generate([prompt], sampling_params=params, use_tqdm=False)
+                outputs = llm.generate([prompt], sampling_params=params, use_tqdm=True)
                 if not outputs:
                     raise RuntimeError("vLLM returned no outputs")
                 generations = outputs[0].outputs
@@ -189,4 +191,3 @@ async def main(
 
     print(json.dumps(summary, indent=2))
     return result
-
