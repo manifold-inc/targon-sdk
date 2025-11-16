@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 from datetime import datetime
@@ -19,10 +20,8 @@ affine_image = (
         "nvidia/cuda:12.8.0-devel-ubuntu22.04",
         add_python="3.12",
     )
-    .pip_install("vllm==0.10.2",
-        "torch==2.8.0",
-        "huggingface_hub==0.35.0",
-        "hf_transfer")
+    .pip_install("vllm==0.11.0",
+        "flashinfer-python==0.5.2")
     .pip_install_from_requirements(str(AFFINE_REQUIREMENTS))
     .env({"HF_HUB_ENABLE_HF_TRANSFER": "1"})
     .add_local_dir(str(AFFINE_ENV_SOURCE), "/workspace/affine_env")
@@ -58,7 +57,7 @@ def _coerce_json(value: Any) -> Any:
         return str(value)
 
 
-@app.function(resource=targon.Compute.H200_MEDIUM, timeout=900, min_replicas=0, max_concurrency=0)
+@app.function(resource=targon.Compute.H200_SMALL, timeout=900, min_replicas=0, max_replicas=10, max_concurrency=1)
 def run_env(
     model_name: str,
     env: str,
@@ -82,7 +81,7 @@ def run_env(
         model=model_name,
         revision="main",
         trust_remote_code=True,
-        tensor_parallel_size=2,
+        tensor_parallel_size=1,
         gpu_memory_utilization=0.85,
         download_dir="/root/.cache/huggingface",
     )
@@ -159,35 +158,75 @@ def run_env(
 
 @app.local_entrypoint()
 async def main(
-    model_name: str,
+    # model_name: str | list[str],
     env: str,
     n: int,
     temperature: float = 0.7,
     max_new_tokens: int = 512,
+    num_models: int = 3,
 ) -> Dict[str, Any]:
     """Run the Affine validator remotely and save rollouts locally."""
     normalized_env = _normalize_env(env)
 
-    result = await run_env.remote(
-        model_name=model_name,
-        env=normalized_env,
-        n=n,
-        temperature=temperature,
-        max_new_tokens=max_new_tokens,
-    )
+    import urllib.request
+    import json
+
+    # Fetch weights from affine.io API
+    url = "https://www.affine.io/api/weights"
+    with urllib.request.urlopen(url) as response:
+        resp_json = json.loads(response.read().decode())
+
+    # Example: extract the list of weights from the third column in rows
+    # The API returns something like: resp_json['data']['rows']
+    affine_model_names = [row[2] for row in resp_json['data']['rows']][:num_models]
+
+    # Execute all models in parallel instead of using sequential map()
+    tasks = [
+        run_env.remote(
+            model_name,
+            normalized_env,
+            n,
+            temperature=temperature,
+            max_new_tokens=max_new_tokens,
+        )
+        for model_name in affine_model_names
+    ]
+    results = await asyncio.gather(*tasks)
+
+    if not results:
+        raise RuntimeError("No results returned from remote evaluations")
+
+    single_model = len(results) == 1
+    payload = results[0] if single_model else results
 
     timestamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
     output_path = Path(f"rollouts_{normalized_env}_{timestamp}.json")
-    output_path.write_text(json.dumps(result, indent=2), encoding="utf-8")
+    output_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
-    summary = {
-        "model_name": result["model_name"],
-        "env": result["env"],
-        "total_samples": result["total_samples"],
-        "avg_reward": result["avg_reward"],
-        "success_rate": result["success_rate"],
-        "output_path": str(output_path),
-    }
+    if single_model:
+        summary: Dict[str, Any] = {
+            "model_name": results[0]["model_name"],
+            "env": results[0]["env"],
+            "total_samples": results[0]["total_samples"],
+            "avg_reward": results[0]["avg_reward"],
+            "success_rate": results[0]["success_rate"],
+            "output_path": str(output_path),
+        }
+    else:
+        summary = {
+            "env": normalized_env,
+            "total_models": len(results),
+            "models": [
+                {
+                    "model_name": res["model_name"],
+                    "total_samples": res["total_samples"],
+                    "avg_reward": res["avg_reward"],
+                    "success_rate": res["success_rate"],
+                }
+                for res in results
+            ],
+            "output_path": str(output_path),
+        }
 
     print(json.dumps(summary, indent=2))
-    return result
+    return payload
