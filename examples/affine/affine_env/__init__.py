@@ -1,6 +1,10 @@
-"""Affine evaluation environment bundled for Targon examples."""
+from .env import Actor
+from .sat import SATTask
 
-from .env import Actor  # noqa: F401
-
-__all__ = ["Actor"]
-
+__all__ = [
+    # Core
+    "Actor",
+    
+    # Tasks
+    "SATTask",
+]

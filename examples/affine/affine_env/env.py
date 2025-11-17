@@ -1,172 +1,138 @@
-"""Affine environment actor for bundled evaluations."""
-
-from __future__ import annotations
-
 import gc
-import os
-import random
 import time
-from typing import Callable, Optional
+from typing import Any, Dict
+from enum import Enum
+from statistics import mean
 
-from .abd import ABDTask
-from .dataset import R2Dataset
-from .ded import DEDTask
-from .sat import SATTask
+from affine_env.sat import SATTask, Challenge
 
-# Global R2Dataset instance - created on module import to trigger background download
-_global_dataset = R2Dataset(dataset_name="satpalsr/rl-python")
 
+class ENVS(Enum):
+    SAT = "SAT"
+    ABD = "ABD"
+    DED = "DED"
+    
+    
+class TASKS:
+    SAT: SATTask
+
+
+class Task:
+    def __init__(self, env: str, evaluator: Any, challenges: list[Challenge]):
+        self.env = env
+        self.evaluate = evaluator
+        self.challenges = challenges
 
 class Actor:
-    """Multi-task evaluation actor."""
+    
+    def __init__(self) -> None:
+        pass
 
-    # Task registry - map task_type to task class
-    TASKS = {
-        "sat": SATTask,
-        "abd": ABDTask,
-        "ded": DEDTask,
-    }
-
-    def __init__(
-        self,
-        *,
-        llm_fn: Optional[Callable[[str, dict], str]] = None,
-        api_key: Optional[str] = None,
-    ):
-        """
-        Initialize Actor with API key and optional LLM callable.
-
-        Args:
-            llm_fn: Optional callable used for LLM inference. Signature:
-                ``llm_fn(prompt: str, *, temperature: float, seed: int) -> str``.
-            api_key: API key for LLM service (when llm_fn is not provided).
-        """
-        self.api_key = api_key or os.getenv("CHUTES_API_KEY")
-        self._llm_fn = llm_fn
-
-    async def _llm_chat(
-        self,
-        prompt: str,
-        *,
-        model: str,
-        temperature: float,
-        timeout: float,
-        base_url: str,
-        seed: Optional[int],
-        api_key: Optional[str],
-    ) -> str:
-        """Call LLM implementation."""
-        if self._llm_fn is None:
-            from .llm_proxy import call_openai_chat
-
-            return await call_openai_chat(
-                prompt=prompt,
-                model=model,
-                temperature=temperature,
-                timeout=timeout,
-                base_url=base_url,
-                api_key=api_key or self.api_key,
-                seed=seed,
-            )
-
-        return await self._llm_fn(
-            prompt=prompt,
-            model=model,
-            temperature=temperature,
-            timeout=timeout,
-            base_url=base_url,
-            seed=seed,
-            api_key=api_key or self.api_key,
+    @staticmethod
+    def create_vllm_instance(model_name: str, revision: str, tp: int, gpu_memory_utilization: float = 0.9, download_dir: str = "/root/.cache/huggingface"):
+        """Lazily construct and cache a vLLM `LLM` instance for the given model"""
+        from vllm import LLM  # type: ignore
+        return LLM(
+            model=model_name,
+            revision=revision,
+            trust_remote_code=True,
+            tensor_parallel_size=tp,
+            gpu_memory_utilization=gpu_memory_utilization,
+            download_dir=download_dir,
         )
 
-    async def evaluate(
+    @staticmethod
+    def create_task_instance(env: str, samples: int, **kwargs) -> Task:
+        """Create a task instance with generated challenges."""
+        env_enum = ENVS[env_key] if (env_key := env.strip().upper()) in ENVS.__members__ else (_ for _ in ()).throw(ValueError(f"Unsupported env '{env}'."))
+        
+        # task_class = SATTask.get(env_enum.value)
+        # if not task_class:
+        #     raise ValueError(f"No task implementation for env '{env_enum.value}'")
+        
+        task_instance = SATTask()
+        challenges = task_instance.generate(samples=samples, **kwargs)
+        
+        return Task(env=env_enum.value, evaluator=task_instance.evaluate, challenges=challenges)
+
+    def evaluate(
         self,
-        task_type: str = "sat",
-        model: str = "deepseek-ai/DeepSeek-V3",
-        base_url: str = "https://llm.chutes.ai/v1",
-        timeout: float = 600,
-        temperature: float = 0.7,
-        api_key: Optional[str] = None,
-        seed: Optional[int] = None,
-    ):
-        """
-        Run evaluation on a single task.
-
-        Args:
-            task_type: Type of task to evaluate (sat, abd, ded)
-            model: Model name to use for evaluation
-            base_url: Base URL for LLM API
-            timeout: Timeout for LLM API calls
-            temperature: Temperature for LLM generation
-            api_key: Override API key for this evaluation.
-            seed: Random seed for LLM generation. If not provided, a random seed will be generated.
-        """
-        # Generate random seed if not provided
-        if seed is None:
-            seed = random.randint(0, 2**32 - 1)
-
-        # Allow per-call api_key override
-        current_api_key = api_key or self.api_key
-        # Get task class from registry
-        task_cls = self.TASKS.get(task_type)
-        if not task_cls:
-            raise ValueError(f"Unknown task: {task_type}. Available: {list(self.TASKS.keys())}")
-
-        # Initialize task instance, passing global dataset if task supports it
-        if task_type in ("abd", "ded"):
-            task_instance = task_cls(dataset=_global_dataset)
-        else:
-            task_instance = task_cls()
-
+        llm: Any,
+        task: Task,
+        sampling_params: Any
+    ) -> Dict[str, Any]:
+        """Run evaluation on challenges and return aggregated results."""
         start = time.time()
-
-        # Generate challenge (unified async interface)
-        challenge = await task_instance.generate()
-
-        # Call LLM
-        try:
-            resp = await self._llm_chat(
-                prompt=challenge.prompt,
-                model=model,
-                temperature=temperature,
-                timeout=timeout,
-                base_url=base_url,
-                api_key=current_api_key,
-                seed=seed,
-            )
-            error = None
-        except Exception as exc:
-            import traceback
-
-            resp = None
-            error = f"{type(exc).__name__}: {exc}\n{traceback.format_exc()}"
-
-        # Evaluate (unified async interface)
-        score = 0.0
-        if resp:
-            score = await task_instance.evaluate(resp, challenge)
-
-        conversation = [
-            {"role": "user", "content": challenge.prompt},
-            {"role": "assistant", "content": resp},
+        
+        prompts = [challenge.prompt for challenge in task.challenges]
+        outputs = llm.generate(prompts, sampling_params, use_tqdm=False)
+        
+        response_texts = [
+            output.outputs[0].text.strip() if output.outputs else ""
+            for output in outputs
         ]
-
+        
+        scores = task.evaluate(response_texts, task.challenges)
+        
+        rollouts: list[Dict[str, Any]] = []
+        
+        for idx, (challenge, output, response_text, score) in enumerate(zip(task.challenges, outputs, response_texts, scores)):
+            conversation = [
+                {"role": "user", "content": challenge.prompt},
+                {"role": "assistant", "content": response_text}
+            ]
+            
+            metrics = {}
+            if hasattr(output, 'metrics') and output.metrics:
+                m = output.metrics
+                metrics['time_in_queue'] = m.time_in_queue if hasattr(m, 'time_in_queue') else None
+                
+                if hasattr(m, 'first_token_time') and hasattr(m, 'first_scheduled_time'):
+                    if m.first_token_time is not None and m.first_scheduled_time is not None:
+                        metrics['time_to_first_token'] = m.first_token_time - m.first_scheduled_time
+                    else:
+                        metrics['time_to_first_token'] = None
+                else:
+                    metrics['time_to_first_token'] = None
+                
+                if hasattr(m, 'finished_time') and hasattr(m, 'arrival_time'):
+                    if m.finished_time is not None and m.arrival_time is not None:
+                        metrics['total_time'] = m.finished_time - m.arrival_time
+                    else:
+                        metrics['total_time'] = None
+                else:
+                    metrics['total_time'] = None
+            
+            rollout = {
+                "task_name": f"affine:{task.env.lower()}",
+                "score": score,
+                "success": score > 0,
+                "extra": {
+                    "conversation": conversation,
+                    "sample_idx": idx,
+                    "metrics": metrics
+                }
+            }
+            
+            rollouts.append(rollout)
+        
+        successes = sum(1 for score in scores if score > 0)
+        avg_reward = mean(scores) if scores else 0.0
+        success_rate = successes / len(scores) if scores else 0.0
+        
         result = {
-            "task_name": f"affine:{task_type}",
-            "score": score,
-            "success": score > 0,
-            "time_taken": time.time() - start,
-            "extra": {"conversation": conversation, "seed": seed},
+            "env": task.env,
+            "total_samples": len(rollouts),
+            "avg_reward": avg_reward,
+            "success_rate": success_rate,
+            "timestamp": time.time(),
+            "total_evaluation_time": time.time() - start,
+            "rollouts": rollouts
         }
-
-        # Add error info if present
-        if error:
-            result["error"] = error
-            result["error_type"] = "llm_failure"
-
-        # Force garbage collection to free memory immediately
-        del task_instance
+        
+        del task
+        del llm
         gc.collect()
-
+        
         return result
 
