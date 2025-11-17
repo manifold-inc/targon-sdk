@@ -20,45 +20,51 @@ def list_apps(ctx):
     """List targon apps that are currently deployed/running or recently stopped."""
     client: Client = ctx.obj["client"]
 
-    async def _list_apps(c: Client):
+    async def _list_apps_with_functions(c: Client):
         async with c:
-            return await c.async_app.list_apps()
+            # First get the list of apps
+            apps_response = await c.async_app.list_apps()
+            
+            # Then fetch detailed status for each app to get function information
+            detailed_apps = []
+            for app in apps_response.apps:
+                try:
+                    app_status = await c.async_app.get_app_status(app.app_id)
+                    detailed_apps.append(app_status)
+                except Exception:
+                    # If we can't get status for an app, include it with basic info
+                    detailed_apps.append(None)
+            
+            return apps_response, detailed_apps
 
     try:
         # Run the async function
-        response = asyncio.run(_list_apps(client))
+        response, detailed_apps = asyncio.run(_list_apps_with_functions(client))
 
         if not response.apps:
             console.print("\n[bright_blue]ℹ[/bright_blue] No apps found.")
             return
 
-        table = Table(
-            title=f"[bold bright_cyan]Targon Apps[/bold bright_cyan] [dim bright_black]({response.total} total)[/dim bright_black]",
-            border_style="dim bright_black",
-            header_style="bold bright_cyan",
-            show_lines=False,
-        )
-        table.add_column("App ID", style="bright_cyan", no_wrap=True)
-        table.add_column("Name", style="bold")
-        table.add_column("Project ID", style="bright_blue")
-        table.add_column("Created", style="dim")
-        table.add_column("Updated", style="dim")
-
-        for app_item in response.apps:
-            # Format timestamps for better readability
-            created_at = format_timestamp(app_item.created_at)
-            updated_at = format_timestamp(app_item.updated_at)
-
-            table.add_row(
-                app_item.app_id,
-                app_item.name,
-                app_item.project_id or "[dim]-[/dim]",
-                created_at,
-                updated_at,
-            )
-
         console.print()
-        console.print(table)
+        console.print(f"[bold bright_cyan]Targon Apps[/bold bright_cyan] [dim bright_black]({response.total} total)[/dim bright_black]")
+        console.print()
+        
+        # Display apps and their functions in hierarchical view
+        for i, app_item in enumerate(response.apps):
+            detailed_app = detailed_apps[i]
+            console.print(f"[bold bright_cyan]└─ {app_item.name}[/bold bright_cyan] [dim]({app_item.app_id})[/dim]")
+            
+            if detailed_app and detailed_app.functions:
+                for func_id, func_data in detailed_app.functions.items():
+                    status_display = get_status_display(func_data.status) if func_data.status else "[dim]●[/dim] Unknown"
+                    console.print(f"     {status_display} [bold]{func_data.name}[/bold] [dim]({func_data.uid})[/dim]")
+                    if func_data.url:
+                        console.print(f"     [dim]URL:[/dim] [bright_blue]{func_data.url}[/bright_blue]")
+            else:
+                console.print(f"   [dim]No functions deployed[/dim]")
+            
+            console.print()
+        
         console.print()
 
     except (TargonError, APIError) as e:
@@ -96,20 +102,55 @@ def app_get(ctx, identifier):
             console.print(f"[bold bright_cyan]{response.name}[/bold bright_cyan]")
             console.print(f"[dim]Function UID:[/dim] [bright_cyan]{response.uid}[/bright_cyan]")
             console.print(f"[dim]App ID:[/dim]       [bright_blue]{response.app_id}[/bright_blue]")
+            if response.status:
+                console.print(f"[dim]Status:[/dim]       {get_status_display(response.status)}")
             console.print(f"[dim]Module:[/dim]       {response.module or '[dim]-[/dim]'}")
             console.print(f"[dim]Qualname:[/dim]     {response.qualname or '[dim]-[/dim]'}")
             console.print(f"[dim]Image ID:[/dim]     {response.image_id or '[dim]-[/dim]'}")
-            console.print(f"[dim]Created:[/dim]      {format_timestamp(response.created_at)}")
-            console.print(f"[dim]Updated:[/dim]      {format_timestamp(response.updated_at)}")
+            console.print(f"[dim]Resource:[/dim]     {response.resource_name or '[dim]-[/dim]'}")
+            console.print(f"[dim]URL:[/dim]          {response.url or '[dim]-[/dim]'}")
             
-            # Display serialized function if available (truncated if too long)
-            if response.serialized:
-                serialized_display = response.serialized
-                if len(serialized_display) > 100:
-                    serialized_display = serialized_display[:97] + "..."
-                console.print(f"\n[bold bright_cyan]Serialized:[/bold bright_cyan]")
-                console.print(f"  [dim]{serialized_display}[/dim]")
-
+            # Display timeout settings if available
+            if response.timeout_secs is not None or response.startup_timeout is not None:
+                console.print()
+                console.print("[bold bright_cyan]Timeouts:[/bold bright_cyan]")
+                if response.timeout_secs is not None:
+                    console.print(f"  [dim]Execution:[/dim] {response.timeout_secs}s")
+                if response.startup_timeout is not None:
+                    console.print(f"  [dim]Startup:[/dim]   {response.startup_timeout}s")
+            
+            # Display webhook config if available
+            if response.webhook_config:
+                console.print()
+                console.print("[bold bright_cyan]Webhook Configuration:[/bold bright_cyan]")
+                console.print(f"  [dim]Type:[/dim]         {response.webhook_config.type}")
+                console.print(f"  [dim]Method:[/dim]       {response.webhook_config.method}")
+                console.print(f"  [dim]Requires Auth:[/dim] {response.webhook_config.requires_auth}")
+                if response.webhook_config.port:
+                    console.print(f"  [dim]Port:[/dim]         {response.webhook_config.port}")
+                if response.webhook_config.label:
+                    console.print(f"  [dim]Label:[/dim]        {response.webhook_config.label}")
+                console.print(f"  [dim]Docs:[/dim]         {response.webhook_config.docs}")
+            
+            # Display autoscaler settings if available
+            if response.autoscaler_settings:
+                console.print()
+                console.print("[bold bright_cyan]Autoscaler Settings:[/bold bright_cyan]")
+                console.print(f"  [dim]Min Replicas:[/dim]              {response.autoscaler_settings.min_replicas}")
+                console.print(f"  [dim]Max Replicas:[/dim]              {response.autoscaler_settings.max_replicas}")
+                if response.autoscaler_settings.container_concurrency is not None:
+                    console.print(f"  [dim]Container Concurrency:[/dim]     {response.autoscaler_settings.container_concurrency}")
+                if response.autoscaler_settings.target_concurrency is not None:
+                    console.print(f"  [dim]Target Concurrency:[/dim]        {response.autoscaler_settings.target_concurrency}")
+                if response.autoscaler_settings.scaling_metric:
+                    console.print(f"  [dim]Scaling Metric:[/dim]            {response.autoscaler_settings.scaling_metric}")
+                if response.autoscaler_settings.target_value is not None:
+                    console.print(f"  [dim]Target Value:[/dim]              {response.autoscaler_settings.target_value}")
+            
+            console.print()
+            console.print(f"[dim]Created:[/dim] {format_timestamp(response.created_at)}")
+            console.print(f"[dim]Updated:[/dim] {format_timestamp(response.updated_at)}")
+            
             console.print()
             console.print(f"[dim]Tips:[/dim]")
             console.print(f"  • View logs: [cyan]targon logs {response.uid}[/cyan]")
@@ -200,6 +241,7 @@ def app_status(ctx, app_id):
 @click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompt")
 @click.pass_context
 def delete_app(ctx, app_ids, yes):
+    """Delete one or more Targon apps and all their deployments."""
     client: Client = ctx.obj["client"]
 
     if not app_ids:
@@ -282,6 +324,15 @@ def delete_app(ctx, app_ids, yes):
     # Exit with error if any deletions failed
     if failed:
         raise SystemExit(1)
+
+
+@app.command("rm")
+@click.argument("app_ids", nargs=-1, required=True)
+@click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompt")
+@click.pass_context
+def remove_app(ctx, app_ids, yes):
+    """Delete one or more Targon apps and all their deployments (alias for delete)."""
+    ctx.invoke(delete_app, app_ids=app_ids, yes=yes)
 
 
 @app.command("functions")
