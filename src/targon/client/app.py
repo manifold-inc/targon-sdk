@@ -3,6 +3,8 @@ from typing import Any, Dict, Optional, List
 
 from targon.core.objects import AsyncBaseHTTPClient
 from targon.core.exceptions import TargonError, ValidationError
+from targon.core.partial_function import WebhookConfig
+from targon.client.functions import AutoscalerSettings
 from targon.client.constants import (
     DEFAULT_BASE_URL,
     GET_APP_ENDPOINT,
@@ -90,8 +92,14 @@ class FunctionDetailResponse:
     name: str
     module: Optional[str]
     qualname: Optional[str]
-    serialized: Optional[str]
     image_id: Optional[str]
+    resource_name: Optional[str]
+    webhook_config: Optional[WebhookConfig]
+    autoscaler_settings: Optional[AutoscalerSettings]
+    timeout_secs: Optional[int]
+    startup_timeout: Optional[int]
+    url: str
+    status: Optional[str]
     created_at: str
     updated_at: str
 
@@ -239,7 +247,7 @@ class AsyncAppClient(AsyncBaseHTTPClient):
             total=result.get("total", len(functions)),
         )
 
-    async def get_function(self, function_id: str, app_id: Optional[str] = None) -> FunctionDetailResponse:
+    async def get_function(self, function_id: str) -> FunctionDetailResponse:
         """Get detailed information about a specific function by its UID."""
         if not function_id or not function_id.strip():
             raise ValidationError("Function ID cannot be empty", field="function_id")
@@ -251,14 +259,30 @@ class AsyncAppClient(AsyncBaseHTTPClient):
         if not isinstance(result, dict):
             raise TargonError(f"Unexpected response format: {type(result).__name__}")
 
+        # Parse webhook_config if present
+        webhook_config = None
+        if webhook_config_data := result.get("webhook_config"):
+            webhook_config = WebhookConfig(**webhook_config_data)
+
+        # Parse autoscaler_settings if present
+        autoscaler_settings = None
+        if autoscaler_data := result.get("autoscaler_settings"):
+            autoscaler_settings = AutoscalerSettings(**autoscaler_data)
+
         return FunctionDetailResponse(
             uid=result.get("uid", function_id),
             app_id=result.get("app_id", ""),
             name=result.get("name", ""),
             module=result.get("module"),
             qualname=result.get("qualname"),
-            serialized=result.get("serialized"),
             image_id=result.get("image_id"),
+            resource_name=result.get("resource_name"),
+            webhook_config=webhook_config,
+            autoscaler_settings=autoscaler_settings,
+            timeout_secs=result.get("timeout_secs"),
+            startup_timeout=result.get("startup_timeout"),
+            url=result.get("url", ""),
+            status=result.get("status"),
             created_at=result.get("created_at", ""),
             updated_at=result.get("updated_at", ""),
         )
