@@ -336,68 +336,6 @@ def remove_app(ctx, app_ids, yes):
     """Delete one or more Targon apps and all their deployments (alias for delete)."""
     ctx.invoke(delete_app, app_ids=app_ids, yes=yes)
 
-
-@app.command("functions")
-@click.argument("app_id", required=True)
-@click.pass_context
-def list_functions(ctx, app_id):
-    """List all functions for a given app."""
-    client: Client = ctx.obj["client"]
-
-    async def _list_functions(c: Client):
-        async with c:
-            return await c.async_app.list_functions(app_id)
-
-    try:
-        response = asyncio.run(_list_functions(client))
-
-        if not response.functions:
-            console.print(
-                f"\n[bright_blue]ℹ[/bright_blue] No functions found for app: [bright_cyan]{app_id}[/bright_cyan]"
-            )
-            return
-
-        table = Table(
-            title=f"[bold bright_cyan]Functions[/bold bright_cyan] [dim bright_black]({response.total} total)[/dim bright_black]",
-            caption=f"[dim]App ID: {app_id}[/dim]",
-            border_style="dim bright_black",
-            header_style="bold bright_cyan",
-            show_lines=False,
-        )
-        table.add_column("UID", style="bright_cyan", no_wrap=True)
-        table.add_column("Name", style="bold")
-        table.add_column("Module", style="bright_blue")
-        table.add_column("Qualname", style="bright_magenta")
-        table.add_column("Image ID", style="yellow", no_wrap=True)
-        table.add_column("Created", style="dim")
-        table.add_column("Updated", style="dim")
-
-        for func in response.functions:
-            created_at = format_timestamp(func.created_at)
-            updated_at = format_timestamp(func.updated_at)
-
-            table.add_row(
-                func.uid,
-                func.name,
-                func.module or "[dim]-[/dim]",
-                func.qualname or "[dim]-[/dim]",
-                func.image_id or "[dim]-[/dim]",
-                created_at,
-                updated_at,
-            )
-
-        console.print()
-        console.print(table)
-        console.print()
-
-    except (TargonError, APIError) as e:
-        console.print(f"\n[bold red]✖[/bold red] [bold]Error:[/bold] {e}\n")
-        raise SystemExit(1)
-    except Exception as e:
-        console.print(f"\n[bold red]✖[/bold red] [bold]Unexpected error:[/bold] {e}\n")
-        raise SystemExit(1)
-
-
 def format_timestamp(timestamp_str: str) -> str:
     """Format timestamp string for display."""
     if not timestamp_str:
