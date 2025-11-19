@@ -770,7 +770,7 @@ class _Image(_Object, type_prefix="img"):
         remote_path: str,
         *,
         copy: bool = True,
-        ignore: Union[Sequence[str], Callable[[Path], bool]] = [],
+        ignore: Union[Sequence[str], Callable[[Path], bool]] = ["__pycache__"],
     ) -> "_Image":
         """Adds a local directory's content to the image at `remote_path` within the container."""
         # Validate that copy=True (Targon doesn't support lazy mounting yet)
