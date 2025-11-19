@@ -3,10 +3,10 @@ from targon.core.exceptions import ValidationError
 from targon.core.partial_function import (
     WebhookType,
     _PartialFunction,
-    PartialFunctionFlags,
+    _PartialFunctionFlags,
+    _PartialFunctionParams,
     WebhookConfig,
 )
-
 
 def fastapi_endpoint(
     _warn_parentheses_missing: Optional[Callable] = None,
@@ -50,13 +50,14 @@ def fastapi_endpoint(
         requires_auth=requires_auth,
     )
 
-    flags = PartialFunctionFlags.WEB_INTERFACE
+    flags = _PartialFunctionFlags.WEB_INTERFACE
+    pf_params = _PartialFunctionParams(webhook_config=webhook_config)
 
     def wrapper(obj: Union[_PartialFunction, Callable]) -> _PartialFunction:
         if isinstance(obj, _PartialFunction):
-            pf = obj.stack(flags)
+            pf = obj.stack(flags,pf_params)
         else:
-            pf = _PartialFunction(obj, flags, webhook_config)
+            pf = _PartialFunction(obj, flags,params=pf_params)
 
         pf.validate_obj_compatibility("fastapi_endpoint")
         return pf
@@ -88,13 +89,15 @@ def asgi_app(
         requires_auth=requires_auth,
     )
 
-    flags = PartialFunctionFlags.WEB_INTERFACE
+    flags = _PartialFunctionFlags.WEB_INTERFACE
+    pf_params = _PartialFunctionParams(webhook_config=webhook_config)
 
     def wrapper(obj: Union[_PartialFunction, Callable]) -> _PartialFunction:
         if isinstance(obj, _PartialFunction):
-            pf = obj.stack(flags)
+            pf = obj.stack(flags,pf_params)
         else:
-            pf = _PartialFunction(obj, flags, webhook_config)
+            pf = _PartialFunction(obj, flags,params=pf_params)
+
         pf.validate_obj_compatibility(
             "asgi_app", require_sync=True, require_nullary=True
         )
@@ -127,13 +130,15 @@ def wsgi_app(
         requires_auth=requires_auth,
     )
 
-    flags = PartialFunctionFlags.WEB_INTERFACE
+    flags = _PartialFunctionFlags.WEB_INTERFACE
+    pf_params = _PartialFunctionParams(webhook_config=webhook_config)
 
     def wrapper(obj: Union[_PartialFunction, Callable]) -> _PartialFunction:
         if isinstance(obj, _PartialFunction):
-            pf = obj.stack(flags)
+            pf = obj.stack(flags,pf_params)
         else:
-            pf = _PartialFunction(obj, flags, webhook_config)
+            pf = _PartialFunction(obj, flags,params=pf_params)
+
         pf.validate_obj_compatibility(
             "wsgi_app", require_sync=True, require_nullary=True
         )
@@ -183,16 +188,139 @@ def web_server(
         startup_timeout=startup_timeout,
     )
 
-    flags = PartialFunctionFlags.WEB_INTERFACE
+    flags = _PartialFunctionFlags.WEB_INTERFACE
+    pf_params = _PartialFunctionParams(webhook_config=webhook_config)
 
     def wrapper(obj: Union[_PartialFunction, Callable]) -> _PartialFunction:
         if isinstance(obj, _PartialFunction):
-            pf = obj.stack(flags)
+            pf = obj.stack(flags,pf_params)
         else:
-            pf = _PartialFunction(obj, flags, webhook_config)
+            pf = _PartialFunction(obj, flags,params=pf_params)
+
         pf.validate_obj_compatibility(
             "web_server", require_sync=True, require_nullary=True
         )
+        return pf
+
+    return wrapper
+
+
+def enter(
+    _warn_parentheses_missing: Optional[Callable] = None,
+) -> Callable[[Union[_PartialFunction, Callable]], _PartialFunction]:
+    if _warn_parentheses_missing is not None:
+        raise ValidationError(
+            "Missing parentheses. Use `@targon.enter()`",
+            field="decorator_usage",
+        )
+
+    flags = _PartialFunctionFlags.ENTER
+    pf_params = _PartialFunctionParams()
+
+    def wrapper(obj: Union[_PartialFunction, Callable]) -> _PartialFunction:
+        if isinstance(obj, _PartialFunction):
+            pf = obj.stack(flags,pf_params)
+        else:
+            pf = _PartialFunction(obj, flags, params=pf_params)
+        pf.validate_obj_compatibility("enter", require_nullary=False)
+        return pf
+
+    return wrapper
+
+
+def exit(
+    _warn_parentheses_missing: Optional[Callable] = None,
+) -> Callable[[Union[_PartialFunction, Callable]], _PartialFunction]:
+
+    if _warn_parentheses_missing is not None:
+        raise ValidationError(
+            "Missing parentheses. Use `@targon.exit()`",
+            field="decorator_usage",
+        )
+
+    flags = _PartialFunctionFlags.EXIT
+    pf_params = _PartialFunctionParams()
+
+    def wrapper(obj: Union[_PartialFunction, Callable]) -> _PartialFunction:
+        if isinstance(obj, _PartialFunction):
+            pf = obj.stack(flags,pf_params)
+        else:
+            pf = _PartialFunction(obj, flags, pf_params)
+        pf.validate_obj_compatibility("exit", require_nullary=False)
+        return pf
+
+    return wrapper
+
+
+def method(
+    _warn_parentheses_missing: Optional[Callable] = None,
+) -> Callable[[Union[_PartialFunction, Callable]], _PartialFunction]:
+    if _warn_parentheses_missing is not None:
+        raise ValidationError(
+            "Missing parentheses. Use `@targon.method()`",
+            field="decorator_usage",
+        )
+
+    flags = _PartialFunctionFlags.CALLABLE_INTERFACE
+    pf_params = _PartialFunctionParams()
+
+    def wrapper(obj: Union[_PartialFunction, Callable]) -> _PartialFunction:
+        if isinstance(obj, _PartialFunction):
+            pf = obj.stack(flags,pf_params)
+        else:
+            pf = _PartialFunction(obj, flags, pf_params)
+        pf.validate_obj_compatibility("method")
+        return pf
+
+    return wrapper
+
+
+
+def concurrent(
+    _warn_parentheses_missing: Optional[Callable] = None,
+    *,
+    max_concurrency: int,
+    target_concurency: Optional[int] = None,
+) -> Callable[[Union[_PartialFunction, Callable]], _PartialFunction]:
+    if _warn_parentheses_missing is not None:
+        raise ValidationError(
+            "Positional arguments are not allowed. "
+            "Did you forget parentheses? Use `@targon.concurrent(max_concurrency=...)`.",
+            field="decorator_usage",
+        )
+
+    if not isinstance(max_concurrency, int) or max_concurrency <= 0:
+        raise ValidationError(
+            "max_concurrency must be a positive integer",
+            field="max_concurrency",
+            value=max_concurrency,
+        )
+
+    if target_concurency is not None:
+        if not isinstance(target_concurency, int) or target_concurency <= 0:
+            raise ValidationError(
+                "target_concurency must be a positive integer when provided",
+                field="target_concurency",
+                value=target_concurency,
+            )
+        if target_concurency > max_concurrency:
+            raise ValidationError(
+                "`target_concurency` parameter cannot be greater than `max_concurrency`.",
+                field="target_concurency",
+                value=target_concurency,
+            )
+
+    flags = _PartialFunctionFlags.CONCURRENT
+    pf_params = _PartialFunctionParams(max_concurrent_inputs=max_concurrency, target_concurrent_inputs=target_concurency)
+
+    def wrapper(obj: Union[_PartialFunction, Callable]) -> _PartialFunction:
+        if isinstance(obj, _PartialFunction):
+            pf = obj.stack(flags,pf_params)
+        else:
+            pf = _PartialFunction(obj, flags, pf_params)
+
+        pf.set_concurrency(max_concurrency, target_concurency)
+        pf.validate_obj_compatibility("concurrent")
         return pf
 
     return wrapper
