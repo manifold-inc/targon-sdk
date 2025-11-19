@@ -241,6 +241,12 @@ class RunGroup(click.Group):
         # Determining the what entrypoint to use
         # @TODO: need to add the functionality to call a function or class directly
         # even if the localentrypoint is not defined
+        if not app_obj._local_entrypoints:
+            _rich_console.print(
+                "[bold red]Error:[/bold red] No local entrypoint found. Please define an entrypoint using [bold]@app.local_entrypoint[/bold]."
+            )
+            ctx.exit(1)
+
         entrypoint_name = list(app_obj._local_entrypoints.keys())[0]
         entrypoint = app_obj._local_entrypoints[entrypoint_name]
         if len(app_obj._local_entrypoints) > 1:
