@@ -257,4 +257,5 @@ class RunGroup(click.Group):
 )
 @click.pass_context
 def run(ctx):
+    """Deplpoy and execute local entrypoints defined in Targon app."""
     pass
