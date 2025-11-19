@@ -138,6 +138,8 @@ def app_get(ctx, identifier):
                 console.print("[bold bright_cyan]Autoscaler Settings:[/bold bright_cyan]")
                 console.print(f"  [dim]Min Replicas:[/dim]              {response.autoscaler_settings.min_replicas}")
                 console.print(f"  [dim]Max Replicas:[/dim]              {response.autoscaler_settings.max_replicas}")
+                if response.autoscaler_settings.initial_replicas is not None:
+                    console.print(f"  [dim]Initial Concurrency:[/dim]     {response.autoscaler_settings.container_concurrency}")
                 if response.autoscaler_settings.container_concurrency is not None:
                     console.print(f"  [dim]Container Concurrency:[/dim]     {response.autoscaler_settings.container_concurrency}")
                 if response.autoscaler_settings.target_concurrency is not None:
