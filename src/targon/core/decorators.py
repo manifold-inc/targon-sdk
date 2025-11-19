@@ -8,6 +8,7 @@ from targon.core.partial_function import (
     WebhookConfig,
 )
 
+
 def fastapi_endpoint(
     _warn_parentheses_missing: Optional[Callable] = None,
     *,
@@ -55,9 +56,9 @@ def fastapi_endpoint(
 
     def wrapper(obj: Union[_PartialFunction, Callable]) -> _PartialFunction:
         if isinstance(obj, _PartialFunction):
-            pf = obj.stack(flags,pf_params)
+            pf = obj.stack(flags, pf_params)
         else:
-            pf = _PartialFunction(obj, flags,params=pf_params)
+            pf = _PartialFunction(obj, flags, pf_params)
 
         pf.validate_obj_compatibility("fastapi_endpoint")
         return pf
@@ -94,9 +95,9 @@ def asgi_app(
 
     def wrapper(obj: Union[_PartialFunction, Callable]) -> _PartialFunction:
         if isinstance(obj, _PartialFunction):
-            pf = obj.stack(flags,pf_params)
+            pf = obj.stack(flags, pf_params)
         else:
-            pf = _PartialFunction(obj, flags,params=pf_params)
+            pf = _PartialFunction(obj, flags, pf_params)
 
         pf.validate_obj_compatibility(
             "asgi_app", require_sync=True, require_nullary=True
@@ -135,9 +136,9 @@ def wsgi_app(
 
     def wrapper(obj: Union[_PartialFunction, Callable]) -> _PartialFunction:
         if isinstance(obj, _PartialFunction):
-            pf = obj.stack(flags,pf_params)
+            pf = obj.stack(flags, pf_params)
         else:
-            pf = _PartialFunction(obj, flags,params=pf_params)
+            pf = _PartialFunction(obj, flags, pf_params)
 
         pf.validate_obj_compatibility(
             "wsgi_app", require_sync=True, require_nullary=True
@@ -193,9 +194,9 @@ def web_server(
 
     def wrapper(obj: Union[_PartialFunction, Callable]) -> _PartialFunction:
         if isinstance(obj, _PartialFunction):
-            pf = obj.stack(flags,pf_params)
+            pf = obj.stack(flags, pf_params)
         else:
-            pf = _PartialFunction(obj, flags,params=pf_params)
+            pf = _PartialFunction(obj, flags, pf_params)
 
         pf.validate_obj_compatibility(
             "web_server", require_sync=True, require_nullary=True
@@ -219,9 +220,9 @@ def enter(
 
     def wrapper(obj: Union[_PartialFunction, Callable]) -> _PartialFunction:
         if isinstance(obj, _PartialFunction):
-            pf = obj.stack(flags,pf_params)
+            pf = obj.stack(flags, pf_params)
         else:
-            pf = _PartialFunction(obj, flags, params=pf_params)
+            pf = _PartialFunction(obj, flags, pf_params)
         pf.validate_obj_compatibility("enter", require_nullary=False)
         return pf
 
@@ -243,7 +244,7 @@ def exit(
 
     def wrapper(obj: Union[_PartialFunction, Callable]) -> _PartialFunction:
         if isinstance(obj, _PartialFunction):
-            pf = obj.stack(flags,pf_params)
+            pf = obj.stack(flags, pf_params)
         else:
             pf = _PartialFunction(obj, flags, pf_params)
         pf.validate_obj_compatibility("exit", require_nullary=False)
@@ -266,7 +267,7 @@ def method(
 
     def wrapper(obj: Union[_PartialFunction, Callable]) -> _PartialFunction:
         if isinstance(obj, _PartialFunction):
-            pf = obj.stack(flags,pf_params)
+            pf = obj.stack(flags, pf_params)
         else:
             pf = _PartialFunction(obj, flags, pf_params)
         pf.validate_obj_compatibility("method")
@@ -275,12 +276,11 @@ def method(
     return wrapper
 
 
-
 def concurrent(
     _warn_parentheses_missing: Optional[Callable] = None,
     *,
     max_concurrency: int,
-    target_concurency: Optional[int] = None,
+    target_concurrency: Optional[int] = None,
 ) -> Callable[[Union[_PartialFunction, Callable]], _PartialFunction]:
     if _warn_parentheses_missing is not None:
         raise ValidationError(
@@ -296,30 +296,32 @@ def concurrent(
             value=max_concurrency,
         )
 
-    if target_concurency is not None:
-        if not isinstance(target_concurency, int) or target_concurency <= 0:
+    if target_concurrency is not None:
+        if not isinstance(target_concurrency, int) or target_concurrency <= 0:
             raise ValidationError(
-                "target_concurency must be a positive integer when provided",
-                field="target_concurency",
-                value=target_concurency,
+                "target_concurrency must be a positive integer when provided",
+                field="target_concurrency",
+                value=target_concurrency,
             )
-        if target_concurency > max_concurrency:
+        if target_concurrency > max_concurrency:
             raise ValidationError(
-                "`target_concurency` parameter cannot be greater than `max_concurrency`.",
-                field="target_concurency",
-                value=target_concurency,
+                "`target_concurrency` parameter cannot be greater than `max_concurrency`.",
+                field="target_concurrency",
+                value=target_concurrency,
             )
 
     flags = _PartialFunctionFlags.CONCURRENT
-    pf_params = _PartialFunctionParams(max_concurrent_inputs=max_concurrency, target_concurrent_inputs=target_concurency)
+    pf_params = _PartialFunctionParams(
+        max_concurrent_inputs=max_concurrency,
+        target_concurrent_inputs=target_concurrency,
+    )
 
     def wrapper(obj: Union[_PartialFunction, Callable]) -> _PartialFunction:
         if isinstance(obj, _PartialFunction):
-            pf = obj.stack(flags,pf_params)
+            pf = obj.stack(flags, pf_params)
         else:
             pf = _PartialFunction(obj, flags, pf_params)
 
-        pf.set_concurrency(max_concurrency, target_concurency)
         pf.validate_obj_compatibility("concurrent")
         return pf
 
