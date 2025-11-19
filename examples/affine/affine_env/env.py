@@ -1,138 +1,110 @@
-import gc
+import asyncio
 import time
-from typing import Any, Dict
-from enum import Enum
-from statistics import mean
+from typing import Any, Dict, List, Sequence
 
-from affine_env.sat import SATTask, Challenge
+import sglang as sgl  # type: ignore
+import sglang.test.doc_patch  # type: ignore  # noqa: F401
 
+from .sat import Challenge, SATTask
 
-class ENVS(Enum):
-    SAT = "SAT"
-    ABD = "ABD"
-    DED = "DED"
-    
-    
-class TASKS:
-    SAT: SATTask
-
-
-class Task:
-    def __init__(self, env: str, evaluator: Any, challenges: list[Challenge]):
-        self.env = env
-        self.evaluate = evaluator
-        self.challenges = challenges
 
 class Actor:
-    
-    def __init__(self) -> None:
-        pass
+    """Adapter that runs Affine tasks using an offline sglang engine."""
+
+    _TASK_REGISTRY = {
+        "sat": SATTask,
+    }
 
     @staticmethod
-    def create_vllm_instance(model_name: str, revision: str, tp: int, gpu_memory_utilization: float = 0.9, download_dir: str = "/root/.cache/huggingface"):
-        """Lazily construct and cache a vLLM `LLM` instance for the given model"""
-        from vllm import LLM  # type: ignore
-        return LLM(
-            model=model_name,
-            revision=revision,
-            trust_remote_code=True,
-            tensor_parallel_size=tp,
-            gpu_memory_utilization=gpu_memory_utilization,
-            download_dir=download_dir,
-        )
+    def create_sglang_instance(model_path: str, **engine_kwargs: Any) -> "sgl.Engine":
+        """Instantiate the offline sglang engine."""
+        config = {"model_path": model_path}
+        config.update(engine_kwargs)
+        return sgl.Engine(**config)
 
     @staticmethod
-    def create_task_instance(env: str, samples: int, **kwargs) -> Task:
-        """Create a task instance with generated challenges."""
-        env_enum = ENVS[env_key] if (env_key := env.strip().upper()) in ENVS.__members__ else (_ for _ in ()).throw(ValueError(f"Unsupported env '{env}'."))
-        
-        # task_class = SATTask.get(env_enum.value)
-        # if not task_class:
-        #     raise ValueError(f"No task implementation for env '{env_enum.value}'")
-        
-        task_instance = SATTask()
-        challenges = task_instance.generate(samples=samples, **kwargs)
-        
-        return Task(env=env_enum.value, evaluator=task_instance.evaluate, challenges=challenges)
+    def create_task_instance(env: str) -> SATTask:
+        """Return the task implementation for the requested environment."""
+        task_cls = Actor._TASK_REGISTRY.get(env.lower())
+        if task_cls is None:
+            supported = ", ".join(sorted(Actor._TASK_REGISTRY.keys()))
+            raise ValueError(f"Unsupported env '{env}'. Supported envs: {supported}")
+        return task_cls()
+
+    @staticmethod
+    async def _async_generate_batches(
+        llm: "sgl.Engine",
+        prompts: Sequence[str],
+        sampling_params: Dict[str, Any],
+        batch_size: int,
+    ) -> List[str]:
+        """Generate texts for the provided prompts in fixed-size batches."""
+        responses: List[str] = []
+        for start in range(0, len(prompts), batch_size):
+            batch_prompts = prompts[start : start + batch_size]
+            outputs = await llm.async_generate(batch_prompts, sampling_params)
+            responses.extend(output.get("text", "") for output in outputs)
+        return responses
 
     def evaluate(
         self,
-        llm: Any,
-        task: Task,
-        sampling_params: Any
+        llm: "sgl.Engine",
+        task: SATTask,
+        sampling_params: Dict[str, Any],
+        *,
+        env: str,
+        samples: int,
+        batch_size: int,
     ) -> Dict[str, Any]:
-        """Run evaluation on challenges and return aggregated results."""
-        start = time.time()
-        
-        prompts = [challenge.prompt for challenge in task.challenges]
-        outputs = llm.generate(prompts, sampling_params, use_tqdm=False)
-        
-        response_texts = [
-            output.outputs[0].text.strip() if output.outputs else ""
-            for output in outputs
-        ]
-        
-        scores = task.evaluate(response_texts, task.challenges)
-        
-        rollouts: list[Dict[str, Any]] = []
-        
-        for idx, (challenge, output, response_text, score) in enumerate(zip(task.challenges, outputs, response_texts, scores)):
+        """Run batched offline inference and evaluate task rewards."""
+        started_at = time.time()
+        challenges: List[Challenge] = task.generate(samples=samples)
+        prompts = [challenge.prompt for challenge in challenges]
+
+        responses = asyncio.run(
+            self._async_generate_batches(llm, prompts, sampling_params, batch_size)
+        )
+
+        rewards = task.evaluate(responses, challenges)
+        total_samples = len(challenges)
+        total_reward = sum(rewards)
+        avg_reward = total_reward / total_samples if total_samples else 0.0
+        success_rate = (
+            sum(1 for reward in rewards if reward > 0) / total_samples
+            if total_samples
+            else 0.0
+        )
+
+        rollouts: List[Dict[str, Any]] = []
+        for idx, (challenge, response, reward) in enumerate(
+            zip(challenges, responses, rewards)
+        ):
             conversation = [
                 {"role": "user", "content": challenge.prompt},
-                {"role": "assistant", "content": response_text}
+                {"role": "assistant", "content": response},
             ]
-            
-            metrics = {}
-            if hasattr(output, 'metrics') and output.metrics:
-                m = output.metrics
-                metrics['time_in_queue'] = m.time_in_queue if hasattr(m, 'time_in_queue') else None
-                
-                if hasattr(m, 'first_token_time') and hasattr(m, 'first_scheduled_time'):
-                    if m.first_token_time is not None and m.first_scheduled_time is not None:
-                        metrics['time_to_first_token'] = m.first_token_time - m.first_scheduled_time
-                    else:
-                        metrics['time_to_first_token'] = None
-                else:
-                    metrics['time_to_first_token'] = None
-                
-                if hasattr(m, 'finished_time') and hasattr(m, 'arrival_time'):
-                    if m.finished_time is not None and m.arrival_time is not None:
-                        metrics['total_time'] = m.finished_time - m.arrival_time
-                    else:
-                        metrics['total_time'] = None
-                else:
-                    metrics['total_time'] = None
-            
-            rollout = {
-                "task_name": f"affine:{task.env.lower()}",
-                "score": score,
-                "success": score > 0,
-                "extra": {
-                    "conversation": conversation,
-                    "sample_idx": idx,
-                    "metrics": metrics
+            rollouts.append(
+                {
+                    "task_name": f"affine:{(challenge.env or env).lower()}",
+                    "score": reward,
+                    "success": reward > 0,
+                    "extra": {
+                        "conversation": conversation,
+                        "sample_idx": idx,
+                        "metrics": {},
+                        "details": challenge.extra,
+                        "timestamp": challenge.timestamp,
+                    },
                 }
-            }
-            
-            rollouts.append(rollout)
-        
-        successes = sum(1 for score in scores if score > 0)
-        avg_reward = mean(scores) if scores else 0.0
-        success_rate = successes / len(scores) if scores else 0.0
-        
-        result = {
-            "env": task.env,
-            "total_samples": len(rollouts),
+            )
+
+        return {
+            "env": challenges[0].env if challenges else env,
+            "total_samples": total_samples,
             "avg_reward": avg_reward,
             "success_rate": success_rate,
-            "timestamp": time.time(),
-            "total_evaluation_time": time.time() - start,
-            "rollouts": rollouts
+            "timestamp": started_at,
+            "total_evaluation_time": time.time() - started_at,
+            "rollouts": rollouts,
         }
-        
-        del task
-        del llm
-        gc.collect()
-        
-        return result
 
