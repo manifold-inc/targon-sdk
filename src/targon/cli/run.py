@@ -251,7 +251,7 @@ class RunGroup(click.Group):
         entrypoint = app_obj._local_entrypoints[entrypoint_name]
         if len(app_obj._local_entrypoints) > 1:
             _rich_console.print(
-                f"[bright_blue]ℹ[/bright_blue] Running first entrypoint: [bold]{entrypoint_name}[/bold]"
+                f"Running first entrypoint: [bold]{entrypoint_name}[/bold]"
             )
 
         return _get_click_command_for_local_entrypoint(app_obj, entrypoint)

@@ -1,5 +1,7 @@
 import requests
 import aiohttp
+import asyncio
+from typing import Callable, Any, TypeVar
 from requests.adapters import HTTPAdapter, Retry
 from targon.cli.auth import get_api_key
 from targon.client.inventory import AsyncInventoryClient
@@ -9,6 +11,8 @@ from targon.client.functions import AsyncFunctionsClient
 from targon.client.app import AsyncAppClient
 from targon.client.publish import AsyncPublishClient
 from targon.client.logs import AsyncLogsClient
+
+T = TypeVar('T')
 
 
 class Client:
@@ -143,3 +147,10 @@ class Client:
     async def __aexit__(self, exc_type, exc_value, traceback):
         # Auto-close the async session when exiting context.
         await self.aclose()
+
+    def run_async(self, coro_func: Callable[[], Any]) -> Any:
+        async def _run():
+            async with self:
+                return await coro_func()
+        return asyncio.run(_run())
+

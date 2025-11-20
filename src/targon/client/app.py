@@ -1,5 +1,6 @@
 from dataclasses import dataclass
-from typing import Any, Dict, Optional, List
+from typing import Any, Dict, Optional, List, Tuple
+import asyncio
 
 from targon.core.objects import AsyncBaseHTTPClient
 from targon.core.exceptions import TargonError, ValidationError
@@ -286,3 +287,25 @@ class AsyncAppClient(AsyncBaseHTTPClient):
             created_at=result.get("created_at", ""),
             updated_at=result.get("updated_at", ""),
         )
+
+    async def list_apps_with_details(
+        self,
+    ) -> Tuple[ListAppsResponse, List[Optional[AppStatusResponse]]]:
+        apps_response = await self.list_apps()
+
+        if not apps_response.apps:
+            return apps_response, []
+
+        # Fetch detailed status for each app in parallel
+        tasks = [self.get_app_status(app.app_id) for app in apps_response.apps]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # Process results
+        detailed_apps = []
+        for res in results:
+            if isinstance(res, Exception):
+                detailed_apps.append(None)
+            else:
+                detailed_apps.append(res)
+
+        return apps_response, detailed_apps

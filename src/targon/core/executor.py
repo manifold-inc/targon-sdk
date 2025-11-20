@@ -241,7 +241,7 @@ async def deploy_app(
             [
                 "",
                 "Next steps:",
-                f"  • View app: targon app get {running_app.app_id}",
+                f"  • View app state: targon app get {running_app.app_id}\n",
             ]
         )
 
