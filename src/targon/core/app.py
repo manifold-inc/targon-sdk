@@ -63,7 +63,7 @@ class _App(BaseApp):
         min_replicas: int = 1,
         max_replicas: int = 3,
         initial_replicas: int = 0,
-        container_concurrency: int | None = None,
+        max_concurrency: int | None = None,
         target_concurrency: int | None = None,
         scale_up_delay: str | None = None,
         scale_down_delay: str | None = None,
@@ -73,7 +73,7 @@ class _App(BaseApp):
         timeout: int = 1500,
         startup_timeout: int = 1500,
         **kwargs: Any,
-    ) -> Callable:
+    ) -> Callable[[Any], _Function]:
 
         if _warn_parentheses_missing is not None:
             raise ValidationError(
@@ -112,27 +112,27 @@ class _App(BaseApp):
             )
 
         def wrapper(f: Any) -> _Function:
-            effective_container_concurrency = container_concurrency
+            effective_container_concurrency = max_concurrency
             effective_target_concurrency = target_concurrency
 
             if isinstance(f, _PartialFunction):
                 raw_func = f.raw_f
+                webhook_config = f.webhook_config
                 if f.is_web_endpoint and raw_func:
                     self._web_endpoints.append(raw_func.__name__)
-                    webhook_config = f.webhook_config
 
                 # If concurrency has been configured via @targon.concurrent, propagate it
                 # into the underlying function's autoscaler configuration.
                 if f._params.max_concurrent_inputs is not None:
                     if (
-                        container_concurrency is not None
+                        max_concurrency is not None
                         or target_concurrency is not None
                     ):
                         raise ValidationError(
                             "Container concurrency cannot be configured both via "
-                            "`@targon.concurrent` and `@app.function(..., container_concurrency=..., "
+                            "`@targon.concurrent` and `@app.function(..., max_concurrency=..., "
                             "target_concurrency=...)`.",
-                            field="container_concurrency",
+                            field="max_concurrency",
                         )
                     effective_container_concurrency = f._params.max_concurrent_inputs
                     effective_target_concurrency = f._params.target_concurrent_inputs
@@ -165,7 +165,7 @@ class _App(BaseApp):
                 min_replicas=min_replicas,
                 max_replicas=max_replicas,
                 initial_replicas=initial_replicas,
-                container_concurrency=effective_container_concurrency,
+                max_concurrency=effective_container_concurrency,
                 target_concurrency=effective_target_concurrency,
                 scale_up_delay=scale_up_delay,
                 scale_down_delay=scale_down_delay,

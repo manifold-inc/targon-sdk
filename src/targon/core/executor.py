@@ -230,20 +230,18 @@ async def deploy_app(
                 continue
 
             # Check if function has webhook config (is a web endpoint)
-            if not func_obj._webhook_config:
-                # It's a webhook endpoint - suggest using targon run with local entry point
+            if func_obj._webhook_config:
+                details_list.append(f"  • {tag}: {func_obj.web_url}")
+            else:
                 details_list.append(
                     f"  • {tag}: use 'targon run' with local entry point"
                 )
-            else:
-                # No webhook config - show gRPC invoke URL
-                details_list.append(f"  • {tag}: {func_obj.web_url}")
 
         details_list.extend(
             [
                 "",
                 "Next steps:",
-                f"  • View logs: targon app logs {resolved_name}",
+                f"  • View app: targon app get {running_app.app_id}",
             ]
         )
 
