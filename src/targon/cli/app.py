@@ -225,6 +225,8 @@ def _display_app_details(response: Any):
     else:
         console.print("\n[dim italic]No functions deployed in this app.[/dim italic]")
 
+app.command("list")(list_apps)
+app.command("ls")(list_apps)
 
 @app.command("get")
 @click.argument("identifier", required=True)
