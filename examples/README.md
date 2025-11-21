@@ -2,6 +2,28 @@
 
 This directory contains examples demonstrating various features of the Targon SDK.
 
+## Affine Validator (Offline vLLM)
+
+### `affine/affine_validator.py` - Run Affine rollouts on serverless GPUs
+
+- Bundles the Affine SAT/ABD/DED environments directly into the image
+- Uses vLLM to load Hugging Face models entirely offline on an H200
+- Collects `n` rollouts and stores the full transcripts plus summary statistics locally
+
+**Run locally with serverless GPUs:**
+```bash
+targon run targon-sdk/examples/affine/affine_validator.py \
+  --model-name facebook/opt-125m \
+  --env SAT \
+  --n 100 \
+  --temperature 0.6 \
+  --max-new-tokens 512
+```
+
+Outputs are written to `rollouts_<env>_<timestamp>.json` with mean reward and success rate.
+
+> **Note:** The first invocation will download model weights and Affine datasets into the container cache. Subsequent runs reuse the cached artifacts.
+
 ## Web Endpoints (FastAPI)
 
 ### `basic_web.py` - FastAPI Endpoint Basics

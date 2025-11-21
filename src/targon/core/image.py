@@ -370,15 +370,17 @@ class _Image(_Object, type_prefix="img"):
         if not requirements_path.is_file():
             raise ValidationError(f"Path is not a file: {requirements_txt}")
 
+        context_filename = ".requirements.txt"
+
         @_dockerfile_function_rep("pip_install_from_requirements")
         def build_dockerfile():
-            context_files = {"/.requirements.txt": str(requirements_path)}
+            context_files = {context_filename: str(requirements_path)}
             extra_args = _make_pip_install_args(
                 find_links, index_url, extra_index_url, pre, extra_options
             )
 
             commands = [
-                "COPY /.requirements.txt /.requirements.txt",
+                f"COPY {context_filename} /.requirements.txt",
                 f"RUN python -m pip install -r /.requirements.txt {extra_args}".strip(),
             ]
 
@@ -768,7 +770,7 @@ class _Image(_Object, type_prefix="img"):
         remote_path: str,
         *,
         copy: bool = True,
-        ignore: Union[Sequence[str], Callable[[Path], bool]] = [],
+        ignore: Union[Sequence[str], Callable[[Path], bool]] = ["__pycache__"],
     ) -> "_Image":
         """Adds a local directory's content to the image at `remote_path` within the container."""
         # Validate that copy=True (Targon doesn't support lazy mounting yet)

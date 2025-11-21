@@ -56,15 +56,31 @@ class _App(BaseApp):
 
     def function(
         self,
+        _warn_parentheses_missing: Any = None,
         *,
         image: Optional[_Image] = None,
         resource: str = Compute.CPU_SMALL,
         min_replicas: int = 1,
         max_replicas: int = 3,
-        max_concurrency: int = 10,
-        timeout: int = 300,
+        initial_replicas: int = 0,
+        max_concurrency: int | None = None,
+        target_concurrency: int | None = None,
+        scale_up_delay: str | None = None,
+        scale_down_delay: str | None = None,
+        zero_grace_period: str | None = None,
+        scaling_metric: str | None = None,
+        target_value: float | None = None,
+        timeout: int = 1500,
+        startup_timeout: int = 1500,
         **kwargs: Any,
     ) -> Callable[[Any], _Function]:
+
+        if _warn_parentheses_missing is not None:
+            raise ValidationError(
+                "Did you forget parentheses? Use `@app.function()`.",
+                field="decorator_usage",
+            )
+
         if min_replicas < 0:
             raise ValidationError(
                 "min_replicas must be non-negative",
@@ -96,11 +112,27 @@ class _App(BaseApp):
             )
 
         def wrapper(f: Any) -> _Function:
+            effective_container_concurrency = max_concurrency
+            effective_target_concurrency = target_concurrency
+
             if isinstance(f, _PartialFunction):
                 raw_func = f.raw_f
+                webhook_config = f.webhook_config
                 if f.is_web_endpoint and raw_func:
                     self._web_endpoints.append(raw_func.__name__)
-                    webhook_config = f.webhook_config
+
+                # If concurrency has been configured via @targon.concurrent, propagate it
+                # into the underlying function's autoscaler configuration.
+                if f._params.max_concurrent_inputs is not None:
+                    if max_concurrency is not None or target_concurrency is not None:
+                        raise ValidationError(
+                            "Container concurrency cannot be configured both via "
+                            "`@targon.concurrent` and `@app.function(..., max_concurrency=..., "
+                            "target_concurrency=...)`.",
+                            field="max_concurrency",
+                        )
+                    effective_container_concurrency = f._params.max_concurrent_inputs
+                    effective_target_concurrency = f._params.target_concurrent_inputs
             else:
                 raw_func = f
                 webhook_config = None
@@ -129,8 +161,16 @@ class _App(BaseApp):
                 resource_name=resource,
                 min_replicas=min_replicas,
                 max_replicas=max_replicas,
-                max_concurrency=max_concurrency,
+                initial_replicas=initial_replicas,
+                max_concurrency=effective_container_concurrency,
+                target_concurrency=effective_target_concurrency,
+                scale_up_delay=scale_up_delay,
+                scale_down_delay=scale_down_delay,
+                zero_grace_period=zero_grace_period,
+                scaling_metric=scaling_metric,
+                target_value=target_value,
                 timeout=timeout,
+                startup_timeout=startup_timeout,
                 **kwargs,
             )
 
@@ -203,10 +243,12 @@ class _App(BaseApp):
             app_file_path = caller_frame.f_globals.get('__file__')
         else:
             app_file_path = None
-        
+
         c = Console(self.name)
         with c:
-            async with run_app(app=self, console_instance=c, app_file_path=app_file_path):
+            async with run_app(
+                app=self, console_instance=c, app_file_path=app_file_path
+            ):
                 yield self
 
 

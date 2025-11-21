@@ -59,7 +59,7 @@ class InvocationContext:
     args: bytes
     kwargs: bytes
     grpc_endpoint: str
-    timeout: int = 300
+    timeout: int = 21600
     max_retries: int = 3
     initial_delay: float = 1.0
     backoff_coefficient: float = 2.0
@@ -78,7 +78,7 @@ class _Invocation:
         args: tuple = (),
         kwargs: dict | None = None,
         *,
-        timeout: int = 300,
+        timeout: int = 21600,
         max_retries: int = 3,
         initial_delay: float = 1.0,
         backoff_coefficient: float = 2.0,
@@ -224,7 +224,7 @@ class _Function(_Object, type_prefix="fnc"):
     _qualname: str | None = None
     _image: _Image | None = None
     _resource_name: str | None = None
-    _timeout: int = 300
+    _timeout: int = 21600
 
     def _initialize_from_empty(self) -> None:
         """Initialize an empty function object."""
@@ -239,7 +239,7 @@ class _Function(_Object, type_prefix="fnc"):
         self._qualname = None
         self._image = None
         self._resource_name = None
-        self._timeout = 300
+        self._timeout = 21600
 
     def _hydrate_metadata(self, metadata: dict[str, Any]) -> None:
         """Extract function-specific metadata from backend."""
@@ -262,8 +262,16 @@ class _Function(_Object, type_prefix="fnc"):
         resource_name: str = Compute.CPU_SMALL,
         min_replicas: int = 1,
         max_replicas: int = 3,
+        initial_replicas: int = 0,
         max_concurrency: int | None = None,
-        timeout: int = 300,
+        target_concurrency: int | None = None,
+        scale_up_delay: str | None = None,
+        scale_down_delay: str | None = None,
+        zero_grace_period: str | None = None,
+        scaling_metric: str | None = None,
+        target_value: float | None = None,
+        timeout: int = 1500,
+        startup_timeout: int = 1500,
     ) -> _Function:
         if user_cls is not None:
             func_name = name or user_cls.__name__
@@ -336,7 +344,14 @@ class _Function(_Object, type_prefix="fnc"):
             autoscaler_settings = AutoscalerSettings(
                 min_replicas=min_replicas,
                 max_replicas=max_replicas,
-                max_concurrency=max_concurrency,
+                initial_replicas=initial_replicas,
+                container_concurrency=max_concurrency,
+                target_concurrency=target_concurrency,
+                scale_up_delay=scale_up_delay,
+                scale_down_delay=scale_down_delay,
+                zero_grace_period=zero_grace_period,
+                scaling_metric=scaling_metric,
+                target_value=target_value,
             )
 
             func_data = {
@@ -355,7 +370,7 @@ class _Function(_Object, type_prefix="fnc"):
                 "image_id": image._registry_ref,
                 "webhook_config": webhook_config,
                 "timeout_secs": timeout,
-                "startup_timeout": timeout,
+                "startup_timeout": startup_timeout,
                 "object_dependencies": object_dependencies,
                 "autoscaler_settings": autoscaler_settings,
                 "resource_name": resource_name,
@@ -401,19 +416,25 @@ class _Function(_Object, type_prefix="fnc"):
             )
         return self._raw_f(*args, **kwargs)
 
-    async def _call_function(self, *args: Any, **kwargs: Any) -> Any:
+    async def _call_function(
+        self, *args: Any, timeout: int | None = None, **kwargs: Any
+    ) -> Any:
+        timeout = timeout or 21600
         invocation = await _Invocation.create(
             function=self,
             args=args,
             kwargs=kwargs,
+            timeout=timeout,
         )
         return await invocation.run_function()
 
     @live_method
-    async def remote(self, *args: Any, **kwargs: Any) -> Any:
+    async def remote(
+        self, *args: Any, timeout: int | None = None, **kwargs: Any
+    ) -> Any:
         """Execute the function remotely on Targon infrastructure."""
         self._check_no_web_url("remote")
-        return await self._call_function(*args, **kwargs)
+        return await self._call_function(*args, timeout=timeout, **kwargs)
 
     def map(self, iterable: Any) -> Any:
         """Map the function over an iterable, executing remotely for each item."""

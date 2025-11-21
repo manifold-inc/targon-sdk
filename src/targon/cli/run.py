@@ -174,7 +174,7 @@ def _get_click_command_for_local_entrypoint(app, entrypoint):
         # Use asyncio.run for the entire execution context
         async def _run_with_app():
             # @TODO:get the app name from the object and replace with display name
-            with console("display_name") as c:
+            with console(app.name) as c:
                 async with run_app(
                     app=app,
                     client=ctx.obj["client"],
@@ -241,11 +241,17 @@ class RunGroup(click.Group):
         # Determining the what entrypoint to use
         # @TODO: need to add the functionality to call a function or class directly
         # even if the localentrypoint is not defined
+        if not app_obj._local_entrypoints:
+            _rich_console.print(
+                "[bold red]Error:[/bold red] No local entrypoint found. Please define an entrypoint using [bold]@app.local_entrypoint[/bold]."
+            )
+            ctx.exit(1)
+
         entrypoint_name = list(app_obj._local_entrypoints.keys())[0]
         entrypoint = app_obj._local_entrypoints[entrypoint_name]
         if len(app_obj._local_entrypoints) > 1:
             _rich_console.print(
-                f"[bright_blue]ℹ[/bright_blue] Running first entrypoint: [bold]{entrypoint_name}[/bold]"
+                f"Running first entrypoint: [bold]{entrypoint_name}[/bold]"
             )
 
         return _get_click_command_for_local_entrypoint(app_obj, entrypoint)
@@ -257,4 +263,5 @@ class RunGroup(click.Group):
 )
 @click.pass_context
 def run(ctx):
+    """Deplpoy and execute local entrypoints defined in Targon app."""
     pass

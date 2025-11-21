@@ -1,4 +1,4 @@
-DEFAULT_BASE_URL = "https://api.beta.targon.com"
+DEFAULT_BASE_URL = "https://api.targon.com"
 API_VERSION = "v1"
 
 # API Endpoints
@@ -6,7 +6,7 @@ INVENTORY_ENDPOINT = f"/{API_VERSION}/capacity"
 DEPLOYMENT_ENDPOINT = f"/{API_VERSION}/serverless"
 
 # Heim Build Service
-HEIM_BASE_URL = "https://api.beta.targon.com"
+HEIM_BASE_URL = "https://api.targon.com"
 HEIM_BUILD_ENDPOINT = f"/{API_VERSION}/heim/build"
 
 # Function Service

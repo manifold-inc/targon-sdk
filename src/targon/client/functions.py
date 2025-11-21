@@ -11,7 +11,14 @@ from targon.client.constants import FUNC_REG_ENDPOINT, DEFAULT_BASE_URL
 class AutoscalerSettings:
     min_replicas: int
     max_replicas: int
-    max_concurrency: Optional[int]
+    initial_replicas: Optional[int] = None
+    container_concurrency: Optional[int] = None
+    target_concurrency: Optional[int] = None
+    scale_up_delay: Optional[str] = None
+    scale_down_delay: Optional[str] = None
+    zero_grace_period: Optional[str] = None
+    scaling_metric: Optional[str] = None
+    target_value: Optional[float] = None
 
 
 @dataclass
