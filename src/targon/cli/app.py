@@ -109,7 +109,7 @@ def list_apps(ctx):
         raise SystemExit(1)
 
 
-app.command("list")(list_apps)
+app.command("list", hidden=True)(list_apps)
 app.command("ls")(list_apps)
 
 
@@ -272,12 +272,12 @@ def app_get(ctx, identifier):
         raise SystemExit(1)
 
 
-@app.command("delete")
+@app.command("rm")
 @click.argument("app_ids", nargs=-1, required=True)
 @click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompt")
 @click.pass_context
 def delete_app(ctx, app_ids, yes):
-    """Delete one or more Targon apps and all their deployments."""
+    """Remove one or more Targon apps and all their deployments."""
     client: Client = ctx.obj["client"]
 
     if not app_ids:
@@ -355,10 +355,10 @@ def delete_app(ctx, app_ids, yes):
         raise SystemExit(1)
 
 
-@app.command("rm")
+@app.command("delete", hidden=True)
 @click.argument("app_ids", nargs=-1, required=True)
 @click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompt")
 @click.pass_context
 def remove_app(ctx, app_ids, yes):
-    """Delete one or more Targon apps and all their deployments (alias for delete)."""
+    """Remove one or more Targon apps and all their deployments."""
     ctx.invoke(delete_app, app_ids=app_ids, yes=yes)
