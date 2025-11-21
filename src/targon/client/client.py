@@ -152,5 +152,5 @@ class Client:
         async def _run():
             async with self:
                 return await coro_func()
-        return asyncio.run(_run())
 
+        return asyncio.run(_run())

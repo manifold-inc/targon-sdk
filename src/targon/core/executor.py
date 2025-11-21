@@ -88,7 +88,8 @@ async def _create_all_objects(
         console_instance.success(
             f"Created {function_count} function{'s' if function_count != 1 else ''}"
         )
-        
+
+
 async def _check_function_deployment_status(
     client: Client,
     running_app: RunningApp,
@@ -103,7 +104,7 @@ async def _check_function_deployment_status(
 
     while True:
         elapsed_time = time.time() - start_time
-        
+
         status_response: AppStatusResponse = await client.async_app.get_app_status(
             app_id=running_app.app_id
         )
@@ -126,8 +127,10 @@ async def _check_function_deployment_status(
 
         if console_instance:
             remaining_time = timeout - elapsed_time
-            console_instance.substep(f"Checking again in {poll_interval}s ({remaining_time:.0f}s remaining)")
-        
+            console_instance.substep(
+                f"Checking again in {poll_interval}s ({remaining_time:.0f}s remaining)"
+            )
+
         await asyncio.sleep(poll_interval)
 
 
@@ -278,11 +281,13 @@ async def run_app(
         console_instance.success("Initialized")
 
     await deploy_app(app, client, console_instance, name, app_file_path, running_app)
-    
+
     if console_instance:
         console_instance.step("Checking deployment status")
 
-    all_deployed = await _check_function_deployment_status(client, running_app, console_instance)
+    all_deployed = await _check_function_deployment_status(
+        client, running_app, console_instance
+    )
 
     if all_deployed:
         try:
@@ -301,5 +306,7 @@ async def run_app(
                 console_instance.success("Local execution completed")
     else:
         if console_instance:
-            console_instance.info(f"View status: targon app status {running_app.app_id}")
+            console_instance.info(
+                f"View status: targon app status {running_app.app_id}"
+            )
         sys.exit(1)

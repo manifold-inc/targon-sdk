@@ -124,10 +124,7 @@ class _App(BaseApp):
                 # If concurrency has been configured via @targon.concurrent, propagate it
                 # into the underlying function's autoscaler configuration.
                 if f._params.max_concurrent_inputs is not None:
-                    if (
-                        max_concurrency is not None
-                        or target_concurrency is not None
-                    ):
+                    if max_concurrency is not None or target_concurrency is not None:
                         raise ValidationError(
                             "Container concurrency cannot be configured both via "
                             "`@targon.concurrent` and `@app.function(..., max_concurrency=..., "
@@ -182,7 +179,6 @@ class _App(BaseApp):
             return fn_obj
 
         return wrapper
-
 
     def local_entrypoint(
         self, _warn_parentheses_missing: Any = None, *, name: Optional[str] = None

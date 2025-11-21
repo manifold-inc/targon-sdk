@@ -6,6 +6,7 @@ from targon.core.exceptions import TargonError, APIError
 
 console = Console(stderr=True)
 
+
 @click.command()
 @click.argument("function_uid", required=True)
 @click.option(
@@ -16,7 +17,7 @@ console = Console(stderr=True)
 @click.pass_context
 def logs(ctx, function_uid, follow):
     """Stream logs from a serverless function.
-    
+
     FUNCTION_UID: The UID of the function to stream logs from (e.g., fnc-xxxxx)
     """
     client: Client = ctx.obj["client"]
@@ -24,7 +25,9 @@ def logs(ctx, function_uid, follow):
     async def _stream_logs(c: Client):
         async with c:
             try:
-                async for log_line in c.async_logs.stream_logs(function_uid, follow=follow):
+                async for log_line in c.async_logs.stream_logs(
+                    function_uid, follow=follow
+                ):
                     # Print directly to stdout (not stderr like console)
                     print(log_line, flush=True)
             except KeyboardInterrupt:
@@ -49,16 +52,23 @@ def logs(ctx, function_uid, follow):
     except APIError as e:
         console.print(f"\n[bold red]✖[/bold red] [bold]API Error:[/bold] {e.message}\n")
         if e.is_not_found:
-            console.print(f"[dim]Hint: Function '{function_uid}' may not exist or may not be deployed yet.[/dim]")
+            console.print(
+                f"[dim]Hint: Function '{function_uid}' may not exist or may not be deployed yet.[/dim]"
+            )
         else:
-            console.print(f"[dim]Hint: Try checking the function state with [cyan]targon app get {function_uid}[/cyan][/dim]")
+            console.print(
+                f"[dim]Hint: Try checking the function state with [cyan]targon app get {function_uid}[/cyan][/dim]"
+            )
         raise SystemExit(1)
     except TargonError as e:
         console.print(f"\n[bold red]✖[/bold red] [bold]Error:[/bold] {e.message}\n")
-        console.print(f"[dim]Hint: Try checking the function state with [cyan]targon app get {function_uid}[/cyan][/dim]")
+        console.print(
+            f"[dim]Hint: Try checking the function state with [cyan]targon app get {function_uid}[/cyan][/dim]"
+        )
         raise SystemExit(1)
     except Exception as e:
         console.print(f"\n[bold red]✖[/bold red] [bold]Unexpected error:[/bold] {e}\n")
-        console.print(f"[dim]Hint: Try checking the function state with [cyan]targon app get {function_uid}[/cyan][/dim]")
+        console.print(
+            f"[dim]Hint: Try checking the function state with [cyan]targon app get {function_uid}[/cyan][/dim]"
+        )
         raise SystemExit(1)
-

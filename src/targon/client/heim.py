@@ -72,7 +72,9 @@ class AsyncHeimClient(AsyncBaseHTTPClient):
         except APIError:
             raise
         except TimeoutError as e:
-            raise TimeoutError(f"Build request timed out: {str(e)}", timeout=30*60) from e
+            raise TimeoutError(
+                f"Build request timed out: {str(e)}", timeout=30 * 60
+            ) from e
         except ClientError as e:
             raise NetworkError(f"Network error during build: {str(e)}", cause=e) from e
         except TargonError:

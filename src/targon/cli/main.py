@@ -25,7 +25,7 @@ def display_error(err: Union[Exception, str], title: str = "Error"):
 
 class SafeGroup(click.Group):
     """A Click Group that catches Targon errors and displays them nicely."""
-    
+
     def __call__(self, *args, **kwargs):
         try:
             return super().__call__(*args, **kwargs)
@@ -38,7 +38,7 @@ class SafeGroup(click.Group):
             # Let Click handle Abort (Ctrl+C)
             if isinstance(e, click.Abort):
                 raise
-            
+
             display_error(e, "Unexpected Error")
             sys.exit(1)
 
@@ -56,7 +56,7 @@ def cli(ctx):
         # Catch auth errors specifically if they happen during init
         if isinstance(e, (TargonError, APIError)):
             raise
-        # For other errors during setup, we might want to let them bubble 
+        # For other errors during setup, we might want to let them bubble
         # to the SafeGroup handler, but providing context is good.
         raise TargonError(f"Failed to initialize client: {e}") from e
 

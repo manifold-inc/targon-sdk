@@ -66,14 +66,16 @@ def list_apps(ctx):
 
         if not response.apps:
             console.print()
-            console.print("[dim]No applications found. Deploy one using [cyan]targon deploy[/cyan].[/dim]")
+            console.print(
+                "[dim]No applications found. Deploy one using [cyan]targon deploy[/cyan].[/dim]"
+            )
             console.print()
             return
 
         # Create a tree for hierarchical view
         tree = Tree(
             f"[bold bright_cyan]Targon Apps[/bold bright_cyan] [dim]({response.total} total)[/dim]",
-            guide_style="bright_black"
+            guide_style="bright_black",
         )
 
         for i, app_item in enumerate(response.apps):
@@ -81,22 +83,30 @@ def list_apps(ctx):
             app_label = Text()
             app_label.append(app_item.name, style="bold bright_cyan")
             app_label.append(f" ({app_item.app_id})", style="dim")
-            
+
             app_node = tree.add(app_label)
-            
+
             if detailed_app and detailed_app.functions:
                 for func_id, func_data in detailed_app.functions.items():
-                    status_text = get_status_display(func_data.status) if func_data.status else "[dim]● Unknown[/dim]"
-                    
-                    func_label = Text.from_markup(f"[bold]{func_data.name}[/bold] {status_text} [dim]({func_data.uid})[/dim]")
+                    status_text = (
+                        get_status_display(func_data.status)
+                        if func_data.status
+                        else "[dim]● Unknown[/dim]"
+                    )
+
+                    func_label = Text.from_markup(
+                        f"[bold]{func_data.name}[/bold] {status_text} [dim]({func_data.uid})[/dim]"
+                    )
                     func_node = app_node.add(func_label)
-                    
+
                     if func_data.url:
-                        func_node.add(f"[dim]URL:[/dim] [bright_blue underline]{func_data.url}[/bright_blue underline]")
-                    
+                        func_node.add(
+                            f"[dim]URL:[/dim] [bright_blue underline]{func_data.url}[/bright_blue underline]"
+                        )
+
             else:
                 app_node.add("[dim italic]No functions deployed[/dim italic]")
-            
+
         console.print()
         console.print(tree)
         console.print()
@@ -124,12 +134,19 @@ def _display_function_details(response: Any):
     grid.add_row("App ID:", f"[bright_blue]{response.app_id}[/bright_blue]")
     if response.status:
         grid.add_row("Status:", get_status_display(response.status))
-    
+
     grid.add_row("Module:", str(response.module or "[dim]-[/dim]"))
     grid.add_row("Qualname:", str(response.qualname or "[dim]-[/dim]"))
     grid.add_row("Image ID:", str(response.image_id or "[dim]-[/dim]"))
     grid.add_row("Resource:", str(response.resource_name or "[dim]-[/dim]"))
-    grid.add_row("URL:", f"[bright_blue underline]{response.url}[/bright_blue underline]" if response.url else "[dim]-[/dim]")
+    grid.add_row(
+        "URL:",
+        (
+            f"[bright_blue underline]{response.url}[/bright_blue underline]"
+            if response.url
+            else "[dim]-[/dim]"
+        ),
+    )
     grid.add_row("Created:", format_timestamp(response.created_at))
     grid.add_row("Updated:", format_timestamp(response.updated_at))
 
@@ -161,15 +178,25 @@ def _display_function_details(response: Any):
         grid.add_row("[bold bright_cyan]Autoscaler Settings[/bold bright_cyan]", "")
         grid.add_row("Min Replicas:", str(response.autoscaler_settings.min_replicas))
         grid.add_row("Max Replicas:", str(response.autoscaler_settings.max_replicas))
-        
+
         if response.autoscaler_settings.container_concurrency is not None:
-            grid.add_row("Container Concurrency:", str(response.autoscaler_settings.container_concurrency))
+            grid.add_row(
+                "Container Concurrency:",
+                str(response.autoscaler_settings.container_concurrency),
+            )
         if response.autoscaler_settings.target_concurrency is not None:
-            grid.add_row("Target Concurrency:", str(response.autoscaler_settings.target_concurrency))
+            grid.add_row(
+                "Target Concurrency:",
+                str(response.autoscaler_settings.target_concurrency),
+            )
         if response.autoscaler_settings.scaling_metric:
-            grid.add_row("Scaling Metric:", str(response.autoscaler_settings.scaling_metric))
+            grid.add_row(
+                "Scaling Metric:", str(response.autoscaler_settings.scaling_metric)
+            )
         if response.autoscaler_settings.target_value is not None:
-            grid.add_row("Target Value:", str(response.autoscaler_settings.target_value))
+            grid.add_row(
+                "Target Value:", str(response.autoscaler_settings.target_value)
+            )
 
     console.print()
     console.print(grid)
@@ -204,7 +231,7 @@ def _display_app_details(response: Any):
             show_lines=False,
             box=None,
             pad_edge=False,
-            collapse_padding=True
+            collapse_padding=True,
         )
         table.add_column("UID", style="bright_cyan", no_wrap=True)
         table.add_column("Name", style="bold")
@@ -225,8 +252,10 @@ def _display_app_details(response: Any):
     else:
         console.print("\n[dim italic]No functions deployed in this app.[/dim italic]")
 
+
 app.command("list")(list_apps)
 app.command("ls")(list_apps)
+
 
 @app.command("get")
 @click.argument("identifier", required=True)
@@ -241,28 +270,34 @@ def app_get(ctx, identifier):
     try:
         if identifier.startswith("fnc-"):
             # Handle function details
-            with console.status("[bold cyan]Fetching function details...[/bold cyan]", spinner="dots"):
+            with console.status(
+                "[bold cyan]Fetching function details...[/bold cyan]", spinner="dots"
+            ):
                 response = client.run_async(
                     lambda: client.async_app.get_function(identifier)
                 )
-            
+
             _display_function_details(response)
 
         elif identifier.startswith("app-"):
             # Handle app status
-            with console.status("[bold cyan]Fetching app details...[/bold cyan]", spinner="dots"):
+            with console.status(
+                "[bold cyan]Fetching app details...[/bold cyan]", spinner="dots"
+            ):
                 response = client.run_async(
                     lambda: client.async_app.get_app_status(identifier)
                 )
-            
+
             _display_app_details(response)
 
         else:
-            console.print("[yellow]⚠[/yellow] Use [cyan]'targon app get <fnc-xxx> or <app-xxx>'[/cyan].")
+            console.print(
+                "[yellow]⚠[/yellow] Use [cyan]'targon app get <fnc-xxx> or <app-xxx>'[/cyan]."
+            )
 
     except APIError as e:
         if hasattr(e, 'is_not_found') and e.is_not_found:
-             display_error(f"Resource '{identifier}' not found.", "Not Found")
+            display_error(f"Resource '{identifier}' not found.", "Not Found")
         else:
             display_error(e, "API Error")
         raise SystemExit(1)
@@ -307,21 +342,23 @@ def delete_app(ctx, app_ids, yes):
         with Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
-            console=console
+            console=console,
         ) as progress:
-            task = progress.add_task(f"[cyan]Deleting {len(app_ids)} apps...[/cyan]", total=len(app_ids))
-            
+            task = progress.add_task(
+                f"[cyan]Deleting {len(app_ids)} apps...[/cyan]", total=len(app_ids)
+            )
+
             # Run parallel deletion using client.run_async
             async def _delete_apps_parallel():
                 # Create tasks for all deletions
                 tasks = [client.async_app.delete_app(app_id) for app_id in app_ids]
-                
+
                 # Execute in parallel, gathering results/exceptions
                 # We map results back to app_ids by index since gather maintains order
                 responses = await asyncio.gather(*tasks, return_exceptions=True)
-                
+
                 return {app_id: responses[i] for i, app_id in enumerate(app_ids)}
-            
+
             results = client.run_async(_delete_apps_parallel)
             progress.update(task, completed=len(app_ids))
 
@@ -333,13 +370,19 @@ def delete_app(ctx, app_ids, yes):
         for app_id, result in results.items():
             if isinstance(result, Exception):
                 failed.append((app_id, result))
-                console.print(f"[bold red]✖[/bold red] Failed to delete [bright_cyan]{app_id}[/bright_cyan]: {str(result)}")
+                console.print(
+                    f"[bold red]✖[/bold red] Failed to delete [bright_cyan]{app_id}[/bright_cyan]: {str(result)}"
+                )
             else:
                 successful.append(app_id)
-                console.print(f"[bold green]✔[/bold green] Successfully deleted [bright_cyan]{app_id}[/bright_cyan]")
+                console.print(
+                    f"[bold green]✔[/bold green] Successfully deleted [bright_cyan]{app_id}[/bright_cyan]"
+                )
                 # Display optional success details
                 if isinstance(result, dict) and result.get("deleted_resources"):
-                    console.print(f"    [dim]Deleted resources: {result['deleted_resources']}[/dim]")
+                    console.print(
+                        f"    [dim]Deleted resources: {result['deleted_resources']}[/dim]"
+                    )
 
         console.print()
         if failed:
@@ -347,7 +390,9 @@ def delete_app(ctx, app_ids, yes):
             console.print(f"[red]Failed:[/red] {len(failed)}")
             raise SystemExit(1)
         else:
-             console.print(f"[bold green]All {len(successful)} apps deleted successfully.[/bold green]\n")
+            console.print(
+                f"[bold green]All {len(successful)} apps deleted successfully.[/bold green]\n"
+            )
 
     except (TargonError, APIError) as e:
         display_error(e, "Deletion Failed")

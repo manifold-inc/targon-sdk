@@ -271,7 +271,7 @@ class _Function(_Object, type_prefix="fnc"):
         scaling_metric: str | None = None,
         target_value: float | None = None,
         timeout: int = 1500,
-        startup_timeout: int = 1500
+        startup_timeout: int = 1500,
     ) -> _Function:
         if user_cls is not None:
             func_name = name or user_cls.__name__
