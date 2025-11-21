@@ -23,7 +23,8 @@ image = (
 app = targon.App("affine", image=image)
 
 
-@app.function(resource=targon.Compute.H200_MEDIUM, timeout=1500, min_replicas=0, container_concurrency=1, max_replicas=3)
+@app.function(resource=targon.Compute.H200_MEDIUM, timeout=1500, min_replicas=0, max_replicas=3)
+@targon.concurrent(max_concurrency=1,target_concurrency=1)
 def run(model_name: str, env: str, n: int, *, temperature: float = 0.7, max_new_tokens: int = 512) -> Dict[str, Any]:
     """Run `n` Affine evaluations using batched offline vLLM inference."""
     sys.path.insert(0, "/workspace")
