@@ -15,7 +15,7 @@ from targon.core.objects import BaseApp, _Object
 from targon.core.exceptions import ValidationError, ServerlessError
 from targon.core.resolver import Resolver
 from targon.core.function import _Function
-from targon.core.utils import check_object_name
+from targon.utils.utils import check_object_name
 
 
 @dataclasses.dataclass

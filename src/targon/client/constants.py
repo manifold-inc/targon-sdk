@@ -25,3 +25,6 @@ PUBLISH_ENDPOINT = f"/{API_VERSION}/apps/deploy"
 
 # Logs Service
 LOGS_ENDPOINT = f"/{API_VERSION}/serverless/logs"
+
+# Mount Endpoints
+MOUNT_FILE_ENDPOINT = f"/{API_VERSION}/mounts/put-file"

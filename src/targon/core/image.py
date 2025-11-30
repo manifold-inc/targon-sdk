@@ -10,6 +10,7 @@ from pathlib import Path, PurePosixPath
 from targon.core.objects import _Object
 from targon.core.exceptions import ValidationError
 from targon.core.resolver import Resolver
+from targon.core.mount import _Mount, NonLocalMountError
 
 
 @dataclass
@@ -156,6 +157,7 @@ class _Image(_Object, type_prefix="img"):
         self._collected_base_images = {}
         self._collected_dockerfile_function = None
         self._runtime_injected = False
+        self._deferred_mounts: tuple[_Mount, ...] = ()
 
     def _get_metadata(self) -> Optional[Dict]:
         return {"registry_ref": self._registry_ref}
@@ -178,6 +180,9 @@ class _Image(_Object, type_prefix="img"):
         # This means this is the base Image
         if base_images is None:
             base_images = {}
+
+        for base in base_images.values():
+            base._assert_no_deferred_mounts()
 
         def _deps() -> List[_Image]:
             return []
@@ -291,7 +296,84 @@ class _Image(_Object, type_prefix="img"):
         if not hasattr(img, '_runtime_injected'):
             img._runtime_injected = False
 
+        img._deferred_mounts = ()
         return img
+
+    def _assert_no_deferred_mounts(self):
+        if self._deferred_mounts:
+            raise ValidationError(
+                "This image already has local mounts attached. "
+                "Run `image.add_local_*` (with copy=False) as the last step in your build or set copy=True "
+                "if the files must be baked into the Docker image."
+            )
+
+    @property
+    def mount_layers(self) -> tuple[_Mount, ...]:
+        return self._deferred_mounts
+
+    def _add_mount_layer_or_copy(self, mount: _Mount, *, copy: bool = False) -> "_Image":
+        if copy:
+            return self._copy_mount(mount)
+
+        base_image = self
+
+        async def _load(new_image: "_Image", resolver: Resolver, existing_object_id: Optional[str]):
+            if not getattr(base_image, "_object_id", None):
+                raise ValidationError(
+                    "Base image must be hydrated before attaching mounts", field="object_id"
+                )
+            metadata = base_image._get_metadata()
+            new_image._hydrate(base_image.object_id, resolver.client, metadata)
+            new_image._registry_ref = base_image._registry_ref
+            new_image._deferred_mounts = base_image._deferred_mounts + (mount,)
+
+        img = _Image._from_loader(_load, "Image(local files)", deps=lambda: [base_image, mount])
+        img._collected_base_images = base_image._collected_base_images
+        img._collected_dockerfile_function = base_image._collected_dockerfile_function
+        img._runtime_injected = base_image._runtime_injected
+        img._registry_ref = base_image._registry_ref
+        img._deferred_mounts = base_image._deferred_mounts + (mount,)
+        return img
+
+    def _copy_mount(self, mount: _Mount) -> "_Image":
+        try:
+            entries = mount.entries
+        except NonLocalMountError as exc:
+            raise ValidationError("Only local mounts can be copied into an image layer.") from exc
+
+        files: List[Tuple[Path, PurePosixPath]] = []
+        for entry in entries:
+            for local_path, remote_path in entry.get_files_to_upload():
+                files.append((local_path, PurePosixPath(remote_path)))
+
+        if not files:
+            raise ValidationError("Mount contains no files to copy into the image.")
+
+        context_files: Dict[str, str] = {}
+        copy_commands: List[str] = []
+        parent_dirs = set()
+
+        for idx, (local_path, remote_path) in enumerate(files):
+            safe_name = f".mount_{idx}_{remote_path.as_posix().strip('/').replace('/', '_') or 'root'}"
+            context_files[safe_name] = str(local_path)
+            copy_commands.append(f"COPY {safe_name} {remote_path.as_posix()}")
+            parent_dirs.add(str(remote_path.parent))
+
+        parent_dirs.discard(".")
+        parent_dirs.discard("")
+        parent_dirs.discard("/")
+        if parent_dirs:
+            sorted_dirs = sorted(parent_dirs)
+            copy_commands.insert(0, f"RUN mkdir -p {' '.join(sorted_dirs)}")
+
+        @_dockerfile_function_rep("copy_mount")
+        def build_dockerfile():
+            return DockerfileSpec(commands=copy_commands, context_files=context_files)
+
+        return _Image._from_args(
+            base_images={"base": self},
+            dockerfile_function=build_dockerfile,
+        )
 
     def apt_install(
         self,
@@ -718,67 +800,31 @@ class _Image(_Object, type_prefix="img"):
         )
 
     def add_local_file(
-        self, local_path: Union[str, Path], remote_path: str, *, copy: bool = True
+        self, local_path: Union[str, Path], remote_path: str, *, copy: bool = False
     ) -> "_Image":
         """Adds a local file to the image at `remote_path` within the container"""
-        # Validate that copy=True (Targon doesn't support lazy mounting yet)
-        if not copy:
-            raise ValidationError(
-                "Targon SDK currently only supports copy=True for add_local_file(). "
-                "Files are always copied into the image layer at build time."
-            )
 
         # Validate remote_path is absolute
         if not PurePosixPath(remote_path).is_absolute():
             raise ValidationError(
                 "image.add_local_file() currently only supports absolute remote_path values"
             )
-
-        # Convert local_path to Path object
-        local_file = Path(local_path).expanduser().resolve()
-
-        # Validate local file exists
-        if not local_file.exists():
-            raise ValidationError(f"Local file not found: {local_path}")
-
-        if not local_file.is_file():
-            raise ValidationError(f"Path is not a file: {local_path}")
-
         # If remote_path ends with "/", append the filename
         if remote_path.endswith("/"):
-            remote_path = remote_path + local_file.name
+            remote_path = remote_path + Path(local_path).name
 
-        # Create a unique context file name to avoid collisions
-        context_filename = f".local_file_{local_file.name}"
-
-        @_dockerfile_function_rep("add_local_file")
-        def build_dockerfile():
-            commands = [
-                f"COPY {context_filename} {remote_path}",
-            ]
-            context_files = {context_filename: str(local_file)}
-            return DockerfileSpec(commands=commands, context_files=context_files)
-
-        return _Image._from_args(
-            base_images={"base": self},
-            dockerfile_function=build_dockerfile,
-        )
+        mount = _Mount._from_local_file(local_path, remote_path=remote_path)
+        return self._add_mount_layer_or_copy(mount, copy=copy)
 
     def add_local_dir(
         self,
         local_path: Union[str, Path],
         remote_path: str,
         *,
-        copy: bool = True,
+        copy: bool = False,
         ignore: Union[Sequence[str], Callable[[Path], bool]] = ["__pycache__"],
     ) -> "_Image":
         """Adds a local directory's content to the image at `remote_path` within the container."""
-        # Validate that copy=True (Targon doesn't support lazy mounting yet)
-        if not copy:
-            raise ValidationError(
-                "Targon SDK currently only supports copy=True for add_local_dir(). "
-                "Files are always copied into the image layer at build time."
-            )
 
         # Validate remote_path is absolute
         if not PurePosixPath(remote_path).is_absolute():
@@ -789,62 +835,13 @@ class _Image(_Object, type_prefix="img"):
         # Convert local_path to Path object
         local_dir = Path(local_path).expanduser().resolve()
 
-        # Validate local directory exists
-        if not local_dir.exists():
-            raise ValidationError(f"Local directory not found: {local_path}")
-
-        if not local_dir.is_dir():
-            raise ValidationError(f"Path is not a directory: {local_path}")
-
-        # Create ignore function
-        ignore_fn = _create_ignore_function(ignore)
-
-        # Collect all files from directory
-        collected_files = _collect_directory_files(local_dir, ignore_fn)
-
-        if not collected_files:
-            raise ValidationError(
-                f"No files found in directory (or all ignored): {local_path}"
-            )
-
-        # Create context files mapping with unique names
-        context_files = {}
-        copy_commands = []
-        parent_dirs = set()
-
-        for local_file_path, rel_path in collected_files:
-            # Create a unique context filename to avoid collisions
-            # Use a safe version of the relative path
-            safe_name = str(rel_path).replace("/", "_").replace("\\", "_")
-            context_filename = f".local_dir_{safe_name}"
-
-            # Map context filename to actual file path
-            context_files[context_filename] = str(local_file_path)
-
-            # Create remote path preserving directory structure
-            remote_file_path = PurePosixPath(remote_path) / rel_path.as_posix()
-
-            # Collect parent directory
-            parent_dirs.add(str(remote_file_path.parent))
-
-            # Store copy command (we'll add mkdir commands before these)
-            copy_commands.append(f"COPY {context_filename} {remote_file_path}")
-
-        # Create all parent directories at once before any COPY commands
-        if parent_dirs:
-            # Sort for consistent ordering and remove duplicates
-            sorted_dirs = sorted(parent_dirs)
-            mkdir_cmd = f"RUN mkdir -p {' '.join(sorted_dirs)}"
-            copy_commands.insert(0, mkdir_cmd)
-
-        @_dockerfile_function_rep("add_local_dir")
-        def build_dockerfile():
-            return DockerfileSpec(commands=copy_commands, context_files=context_files)
-
-        return _Image._from_args(
-            base_images={"base": self},
-            dockerfile_function=build_dockerfile,
+        mount = _Mount._from_local_dir(
+            Path(local_path),
+            remote_path=remote_path,
+            ignore=ignore,
+            recursive=True,
         )
+        return self._add_mount_layer_or_copy(mount, copy=copy)
 
     def _inject_runtime(
         self, app_file: Union[str, Path], app_module_name: str = "app"

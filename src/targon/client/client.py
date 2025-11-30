@@ -5,6 +5,7 @@ from typing import Callable, Any, TypeVar
 from requests.adapters import HTTPAdapter, Retry
 from targon.cli.auth import get_api_key
 from targon.client.inventory import AsyncInventoryClient
+from targon.client.mount import AsyncMountClient
 from targon.core.config import Config
 from targon.client.heim import AsyncHeimClient
 from targon.client.functions import AsyncFunctionsClient
@@ -34,6 +35,7 @@ class Client:
         self._async_inventory = None
         self._async_heim = None
         self._async_functions = None
+        self._async_mount = None
         self._async_app = None
         self._async_publish = None
         self._async_logs = None
@@ -91,6 +93,12 @@ class Client:
         if self._async_functions is None:
             self._async_functions = AsyncFunctionsClient(self)
         return self._async_functions
+    
+    @property
+    def async_mount(self) -> AsyncMountClient:
+        if self._async_mount is None:
+            self._async_mount = AsyncMountClient(self)
+        return self._async_mount
 
     @property
     def async_app(self) -> AsyncAppClient:

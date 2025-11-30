@@ -3,6 +3,39 @@ from typing import Dict, Optional
 from targon.client.constants import DEFAULT_BASE_URL
 from targon.core.exceptions import ConfigurationError
 from targon.version import __version__
+import logging
+
+DEFAULT_LOG_FORMAT = "\033[32m[targon-sdk]\033[0m %(asctime)s %(levelname)s %(message)s"
+DEFAULT_LOG_LEVEL = logging.CRITICAL
+
+LOG_LEVEL_LOOKUP = {
+    "CRITICAL": logging.CRITICAL,
+    "ERROR": logging.ERROR,
+    "WARNING": logging.WARNING,
+    "WARN": logging.WARNING,
+    "INFO": logging.INFO,
+    "DEBUG": logging.DEBUG,
+    "NOTSET": logging.NOTSET,
+}
+
+def _configure_logger() -> logging.Logger:
+    logger = logging.getLogger("targon-sdk")
+
+    if not logger.handlers:
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter(DEFAULT_LOG_FORMAT, datefmt="%Y-%m-%d %H:%M:%S"))
+        logger.addHandler(handler)
+
+    log_level_str = os.getenv("TARGON_LOG_LEVEL")
+    if log_level_str:
+        logger.setLevel(LOG_LEVEL_LOOKUP.get(log_level_str.upper(), logging.INFO))
+    else:
+        logger.setLevel(DEFAULT_LOG_LEVEL)
+
+    logger.propagate = False
+    return logger
+
+logger = _configure_logger()
 
 
 class Config:
