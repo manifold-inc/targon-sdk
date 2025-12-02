@@ -332,15 +332,15 @@ class _Mount(_Object, type_prefix="mnt"):
             if file_spec.use_blob:
                 raise TargonError("The use of file more than 4MB is not implemented.")
             else:
-                start_time = time.monotonic()
-                while time.monotonic() - start_time < 10 * 60:
-                    exists = await mount_client.mount_put_file(
-                        sha256_hex=file_spec.sha256_hex, data=file_spec.content
-                    )
-                    if exists:
-                        n_finished += 1
-                        return mount_file_manifest
-
+                # start_time = time.monotonic()
+                # while time.monotonic() - start_time < 10 * 60:
+                #     exists = await mount_client.mount_put_file(
+                #         sha256_hex=file_spec.sha256_hex, data=file_spec.content
+                #     )
+                #     if exists:
+                #         n_finished += 1
+                #         return mount_file_manifest
+                #     time.sleep(10)
                 logger.debug(
                     "Prepared inline upload for %s (%s bytes)",
                     file_spec.source_description,
@@ -362,18 +362,10 @@ class _Mount(_Object, type_prefix="mnt"):
 
 
         logger.info("Now regesiter all the checksum to tha and get the mount id !")
-        manifest = [
-            MountManifestEntry(
-                filename=file_spec.mount_filename,
-                sha256_hex=file_spec.sha256_hex,
-                size=file_spec.size,
-            )
-            for file_spec in sorted(files, key=lambda spec: spec.mount_filename)
-        ]
 
         object_id = f"mnt-xxxxxx"
-        metadata = {"checksum": "xxxxxx", "manifest": [dataclasses.asdict(entry) for entry in manifest]}
-        self._hydrate(object_id, resolver.client, metadata)
+        # metadata = {"checksum": "xxxxxx", "manifest": files}
+        self._hydrate(object_id, resolver.client)
 
     @staticmethod
     def _ensure_remote_path(remote_path: Union[str, PurePosixPath, None], fallback: str) -> PurePosixPath:
