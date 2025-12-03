@@ -22,6 +22,7 @@ def container():
     """Manage serverless containers."""
     pass
 
+
 @container.command("rm")
 @click.argument("container_ids", nargs=-1, required=True)
 @click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompt")
@@ -32,21 +33,20 @@ def remove_containers(ctx, container_ids: List[str], yes: bool) -> None:
 
     if not yes:
         if len(container_ids) == 1:
-            click.confirm(
-                f"Delete container '{container_ids[0]}'?", abort=True
-            )
+            click.confirm(f"Delete container '{container_ids[0]}'?", abort=True)
         else:
             console.print("\n[bold]Containers to delete:[/bold]")
             for cid in container_ids:
                 console.print(f"  • [bright_cyan]{cid}[/bright_cyan]")
             console.print()
-            click.confirm(
-                f"Delete all {len(container_ids)} containers?", abort=True
-            )
+            click.confirm(f"Delete all {len(container_ids)} containers?", abort=True)
 
     try:
+
         async def _delete_all():
-            tasks = [client.async_serverless.delete_resource(cid) for cid in container_ids]
+            tasks = [
+                client.async_serverless.delete_resource(cid) for cid in container_ids
+            ]
             results = await asyncio.gather(*tasks, return_exceptions=True)
             return {container_ids[i]: results[i] for i in range(len(container_ids))}
 
@@ -69,13 +69,17 @@ def remove_containers(ctx, container_ids: List[str], yes: bool) -> None:
                 failures.append(cid)
                 console.print(f"[bold red]✖[/bold red] {cid}: {result}")
             else:
-                console.print(f"[bold green]✔[/bold green] Deleted [bright_cyan]{cid}[/bright_cyan]")
+                console.print(
+                    f"[bold green]✔[/bold green] Deleted [bright_cyan]{cid}[/bright_cyan]"
+                )
 
         console.print()
         if failures:
             console.print(f"[red]Failed:[/red] {len(failures)} / {len(container_ids)}")
             raise SystemExit(1)
-        console.print(f"[bold green]All {len(container_ids)} containers deleted.[/bold green]\n")
+        console.print(
+            f"[bold green]All {len(container_ids)} containers deleted.[/bold green]\n"
+        )
 
     except (TargonError, APIError) as e:
         display_error(e, "Deletion failed")

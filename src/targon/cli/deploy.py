@@ -13,6 +13,7 @@ from targon.core.console import _rich_console
 def is_config_file(path: str) -> bool:
     return Path(path).suffix.lower() in ['.yaml', '.yml', '.json']
 
+
 def find_default_config() -> Path | None:
     """
     Find default configuration file in current directory.
@@ -20,19 +21,20 @@ def find_default_config() -> Path | None:
     """
     candidates = [
         "targon.yaml",
-        "targon.yml", 
+        "targon.yml",
         "deploy.yaml",
         "deploy.yml",
         "targon.json",
         "deploy.json",
     ]
-    
+
     for candidate in candidates:
         path = Path(candidate)
         if path.exists():
             return path
-    
+
     return None
+
 
 @click.command()
 @click.argument("target", required=True)
@@ -44,7 +46,7 @@ def deploy(ctx, target, name, config):
     client: Client = ctx.obj["client"]
 
     config_path = None
-    
+
     if config:
         config_path = Path(config)
         if not config_path.exists():
@@ -60,9 +62,7 @@ def deploy(ctx, target, name, config):
         default_config = find_default_config()
         if default_config:
             config_path = default_config
-            _rich_console.print(
-                f"[dim]Using config: {config_path}[/dim]\n"
-            )
+            _rich_console.print(f"[dim]Using config: {config_path}[/dim]\n")
         else:
             raise ValidationError(
                 "No target specified. Provide a Python file or config file.\n"
@@ -77,9 +77,9 @@ def deploy(ctx, target, name, config):
     try:
         if config_path:
             cfg = load_config(config_path)
-            
+
             display_name = name or cfg.app_name
-            
+
             with console(display_name) as c:
                 asyncio.run(
                     deploy_config(
@@ -108,7 +108,5 @@ def deploy(ctx, target, name, config):
                 )
 
     except (TargonError, APIError) as e:
-        _rich_console.print(
-            f"\n[red]✗[/red] [bold]Deployment failed:[/bold] {e}\n"
-        )
+        _rich_console.print(f"\n[red]✗[/red] [bold]Deployment failed:[/bold] {e}\n")
         raise SystemExit(1)

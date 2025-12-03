@@ -39,7 +39,7 @@ class Client:
         self._async_publish = None
         self._async_logs = None
         self._async_serverless = None
-        
+
     def _init_session(self) -> requests.Session:
         session = requests.Session()
         session.headers.update(self.config.headers)
@@ -111,7 +111,7 @@ class Client:
         if self._async_logs is None:
             self._async_logs = AsyncLogsClient(self)
         return self._async_logs
-    
+
     @property
     def async_serverless(self) -> AsyncServerlessClient:
         if self._async_serverless is None:

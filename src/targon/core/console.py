@@ -61,14 +61,11 @@ class Console:
         self._step_count = 0
         self._success_count = 0
         self._header_printed = False
-        
+
         self._print_header()
-        
+
         self._live = Live(
-            "", 
-            console=self.console, 
-            refresh_per_second=10,
-            transient=True
+            "", console=self.console, refresh_per_second=10, transient=True
         )
         self._live.start()
         return self
@@ -81,10 +78,10 @@ class Console:
     def _print_header(self) -> None:
         if self._header_printed:
             return
-        
+
         # Simple clean divider
         self.console.print()
-        
+
         table = Table.grid(padding=(0, 1))
         table.add_column(justify="left", no_wrap=True)
         table.add_column(justify="right")
@@ -101,11 +98,11 @@ class Console:
         right_text.append(time.strftime("%H:%M:%S"), style="dim")
 
         table.add_row(left_text, right_text)
-        
+
         self.console.print(table)
         self.console.print("─" * (self.console.width - 2), style="dim")
         self.console.print()
-        
+
         self._header_printed = True
 
     def _print_line(self, line: str) -> None:
@@ -132,9 +129,7 @@ class Console:
         self._active_detail = detail
         self._step_count += 1
 
-        self._active_spinner = Spinner(
-            "dots", text=f"{message}", style="cyan"
-        )
+        self._active_spinner = Spinner("dots", text=f"{message}", style="cyan")
 
         self._update_spinner()
 
@@ -166,7 +161,7 @@ class Console:
         # Clear spinner
         if self._live:
             self._live.update("")
-        
+
         self._active_spinner = None
         self._active_substep_message = ""
         self._active_substep_detail = ""
@@ -184,7 +179,7 @@ class Console:
         # Clear spinner
         if self._live:
             self._live.update("")
-        
+
         self._active_spinner = None
         self._active_substep_message = ""
         self._active_substep_detail = ""
@@ -223,23 +218,25 @@ class Console:
 
         self.separator()
         self.console.print("─" * (self.console.width - 2), style="dim")
-        
+
         # Success message
         msg_line = f"[bold green]✓[/bold green] {message}"
         if total_duration > 0:
             msg_line += f" [dim]({total_duration:.2f}s)[/dim]"
-        
+
         self._print_line(msg_line)
-        
+
         if self._step_count > 0:
-            stats_line = f"  [dim]{self._success_count}/{self._step_count} steps completed[/dim]"
+            stats_line = (
+                f"  [dim]{self._success_count}/{self._step_count} steps completed[/dim]"
+            )
             self._print_line(stats_line)
 
         if details:
             self.console.print()
             for detail in details:
                 self._print_line(f"  [dim]{detail}[/dim]")
-        
+
         self.console.print()
 
     def _update_spinner(self) -> None:
@@ -248,7 +245,7 @@ class Console:
             return
 
         rendered_lines: List[Any] = [self._active_spinner]
-        
+
         if self._active_detail:
             detail_text = Text.from_markup(f"  [dim]{self._active_detail}[/dim]")
             if len(detail_text) > self.console.width - 4:
@@ -259,7 +256,7 @@ class Console:
             line = f"  [dim]│[/dim] {self._active_substep_message}"
             if self._active_substep_detail:
                 line += f" [dim]· {self._active_substep_detail}[/dim]"
-            
+
             substep_text = Text.from_markup(line)
             if len(substep_text) > self.console.width - 2:
                 substep_text.truncate(self.console.width - 2, overflow="ellipsis")

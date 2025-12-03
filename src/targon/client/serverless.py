@@ -45,7 +45,7 @@ class RegistryCredentials:
 
 
 def _coerce_env(
-    env: Optional[Union[Dict[str, str], Sequence[EnvVar]]]
+    env: Optional[Union[Dict[str, str], Sequence[EnvVar]]],
 ) -> Optional[List[EnvVar]]:
     if env is None:
         return None
@@ -62,7 +62,9 @@ def _coerce_env(
                 )
             env_list.append(item)
         return env_list
-    raise ValidationError("env must be a dict or sequence of EnvVar objects", field="env")
+    raise ValidationError(
+        "env must be a dict or sequence of EnvVar objects", field="env"
+    )
 
 
 @dataclass(slots=True)
@@ -137,7 +139,9 @@ class NetworkConfig:
                 payload["port"] = self.port
             else:
                 raise ValidationError(
-                    "port must be a PortConfig or mapping", field="port", value=self.port
+                    "port must be a PortConfig or mapping",
+                    field="port",
+                    value=self.port,
                 )
         if self.visibility:
             payload["visibility"] = self.visibility
@@ -155,7 +159,9 @@ class CreateServerlessResourceRequest:
 
     def to_payload(self) -> Dict[str, Any]:
         if not self.name or not isinstance(self.name, str) or not self.name.strip():
-            raise ValidationError("name must be provided", field="name", value=self.name)
+            raise ValidationError(
+                "name must be provided", field="name", value=self.name
+            )
         payload: Dict[str, Any] = {
             "name": self.name.strip(),
             "container": self.container.to_payload(),
@@ -187,16 +193,17 @@ class CreateServerlessResponse:
                 f"Expected dict for CreateServerlessResponse, got {type(data).__name__}",
                 object_type="CreateServerlessResponse",
             )
-        
+
         serverless_uid = data.get("serverless_uid")
-        
+
         if not serverless_uid:
             raise HydrationError(
                 "Missing serverless_uid in CreateServerlessResponse response",
                 object_type="CreateServerlessResponse",
             )
-        
+
         return cls(serverless_uid=serverless_uid)
+
 
 class AsyncServerlessClient(AsyncBaseHTTPClient):
     def __init__(self, client):
