@@ -50,7 +50,7 @@ def logs(ctx, function_uid, follow):
     except KeyboardInterrupt:
         console.print("\n[dim]Log streaming stopped.[/dim]")
     except APIError as e:
-        console.print(f"\n[bold red]✖[/bold red] [bold]API Error:[/bold] {e.message}\n")
+        console.print(f"\n[red]✗[/red] [bold]API Error:[/bold] {e.message}\n")
         if e.is_not_found:
             console.print(
                 f"[dim]Hint: Function '{function_uid}' may not exist or may not be deployed yet.[/dim]"
@@ -61,13 +61,13 @@ def logs(ctx, function_uid, follow):
             )
         raise SystemExit(1)
     except TargonError as e:
-        console.print(f"\n[bold red]✖[/bold red] [bold]Error:[/bold] {e.message}\n")
+        console.print(f"\n[red]✗[/red] [bold]Error:[/bold] {e.message}\n")
         console.print(
             f"[dim]Hint: Try checking the function state with [cyan]targon app get {function_uid}[/cyan][/dim]"
         )
         raise SystemExit(1)
     except Exception as e:
-        console.print(f"\n[bold red]✖[/bold red] [bold]Unexpected error:[/bold] {e}\n")
+        console.print(f"\n[red]✗[/red] [bold]Unexpected error:[/bold] {e}\n")
         console.print(
             f"[dim]Hint: Try checking the function state with [cyan]targon app get {function_uid}[/cyan][/dim]"
         )

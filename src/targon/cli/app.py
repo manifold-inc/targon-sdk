@@ -318,7 +318,7 @@ def delete_app(ctx, app_ids, yes):
     client: Client = ctx.obj["client"]
 
     if not app_ids:
-        console.print("[bold red]✖[/bold red] At least one app ID is required")
+        console.print("[red]✗[/red] At least one app ID is required")
         raise SystemExit(1)
 
     if not yes:
@@ -371,12 +371,12 @@ def delete_app(ctx, app_ids, yes):
             if isinstance(result, Exception):
                 failed.append((app_id, result))
                 console.print(
-                    f"[bold red]✖[/bold red] Failed to delete [bright_cyan]{app_id}[/bright_cyan]: {str(result)}"
+                    f"[red]✗[/red] Failed to delete [bright_cyan]{app_id}[/bright_cyan]: {str(result)}"
                 )
             else:
                 successful.append(app_id)
                 console.print(
-                    f"[bold green]✔[/bold green] Successfully deleted [bright_cyan]{app_id}[/bright_cyan]"
+                    f"[green]✓[/green] Successfully deleted [bright_cyan]{app_id}[/bright_cyan]"
                 )
                 # Display optional success details
                 if isinstance(result, dict) and result.get("deleted_resources"):

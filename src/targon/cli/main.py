@@ -11,6 +11,7 @@ from targon.cli.deploy import deploy
 from targon.cli.run import run
 from targon.cli.app import app
 from targon.cli.logs import logs
+from targon.cli.container import container
 from targon.version import __version__
 
 console = Console(stderr=True)
@@ -68,6 +69,7 @@ cli.add_command(deploy, name="deploy")
 cli.add_command(run, name="run")
 cli.add_command(app, name="app")
 cli.add_command(logs, name="logs")
+cli.add_command(container, name="container")
 
 if __name__ == '__main__':
     cli()

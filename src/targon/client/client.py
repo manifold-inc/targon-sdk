@@ -5,6 +5,7 @@ from typing import Callable, Any, TypeVar
 from requests.adapters import HTTPAdapter, Retry
 from targon.cli.auth import get_api_key
 from targon.client.inventory import AsyncInventoryClient
+from targon.client.serverless import AsyncServerlessClient
 from targon.core.config import Config
 from targon.client.heim import AsyncHeimClient
 from targon.client.functions import AsyncFunctionsClient
@@ -37,7 +38,8 @@ class Client:
         self._async_app = None
         self._async_publish = None
         self._async_logs = None
-
+        self._async_serverless = None
+        
     def _init_session(self) -> requests.Session:
         session = requests.Session()
         session.headers.update(self.config.headers)
@@ -109,6 +111,12 @@ class Client:
         if self._async_logs is None:
             self._async_logs = AsyncLogsClient(self)
         return self._async_logs
+    
+    @property
+    def async_serverless(self) -> AsyncServerlessClient:
+        if self._async_serverless is None:
+            self._async_serverless = AsyncServerlessClient(self)
+        return self._async_serverless
 
     @classmethod
     def from_env(cls):

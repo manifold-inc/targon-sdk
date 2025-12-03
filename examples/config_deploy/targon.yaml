@@ -1,0 +1,36 @@
+version: "1.0"
+app_name: my-microservices
+
+registry:
+  server: https://gcr.io
+  username: _json_key
+  password: ${GCP_SERVICE_ACCOUNT_KEY}
+
+containers:
+  - name: api-server-1
+    resource: cpu-small
+    image: nginx
+    port: 80
+    env:
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: redis://cache:6379
+      LOG_LEVEL: info
+    replicas:
+      min: 1
+      max: 1
+      container_concurrency:: 100
+      target_concurrency: 100
+      
+  - name: api-server-2
+    resource: cpu-small
+    image: nginx
+    port: 80
+    env:
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: redis://cache:6379
+      LOG_LEVEL: info
+    replicas:
+      min: 1
+      max: 1
+      container_concurrency:: 100
+      target_concurrency: 100
