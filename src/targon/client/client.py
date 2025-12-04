@@ -1,3 +1,4 @@
+import threading
 import requests
 import aiohttp
 import asyncio
@@ -16,7 +17,38 @@ from targon.client.logs import AsyncLogsClient
 T = TypeVar('T')
 
 
-class Client:
+class ClientMeta(type):
+    """Metaclass to enable class-level property access for default client instance."""
+    
+    _default_instance: 'Client' = None
+    _lock = threading.Lock()
+
+    @property
+    def async_serverless(cls) -> AsyncServerlessClient:
+        if cls._default_instance is None:
+            with cls._lock:
+                if cls._default_instance is None:
+                    cls._default_instance = cls.from_env()
+        return cls._default_instance.async_serverless
+    
+    @property
+    def async_inventory(cls) -> AsyncInventoryClient:
+        if cls._default_instance is None:
+            with cls._lock:
+                if cls._default_instance is None:
+                    cls._default_instance = cls.from_env()
+        return cls._default_instance.async_inventory
+    
+    @property
+    def async_logs(cls) -> AsyncLogsClient:
+        if cls._default_instance is None:
+            with cls._lock:
+                if cls._default_instance is None:
+                    cls._default_instance = cls.from_env()
+        return cls._default_instance.async_logs
+
+
+class Client(metaclass=ClientMeta):
     """
     Targon SDK Client
     Handles authentication, configuration, and exposes various service clients lazily.
