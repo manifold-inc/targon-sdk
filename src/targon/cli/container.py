@@ -83,8 +83,9 @@ def list_containers(
         table.add_column("URL", style="blue")
         table.add_column("COST", justify="right", style="yellow")
         table.add_column("CREATED", style="green")
-
+        total_cost = 0
         for resource in resources:
+            total_cost += resource.cost
             table.add_row(
                 resource.name or "—",
                 resource.uid,
@@ -95,6 +96,11 @@ def list_containers(
 
         console.print()
         console.print(table)
+        container_count = len(resources)
+        container_text = "container" if container_count == 1 else "containers"
+        console.print(
+            f"[bold]Total:[/bold] [bright_cyan]{container_count}[/bright_cyan] {container_text} - [yellow]${total_cost:,.2f}/hr[/yellow]"
+        )
         console.print()
 
     except (TargonError, APIError) as e:
