@@ -11,11 +11,13 @@ from targon.core.resources import Compute
 from targon.client.serverless import (
     CreateServerlessResourceRequest,
     ContainerConfig as ServerlessContainerConfig,
+    RegistryConfig,
     RegistryCredentials,
     AutoScalingConfig,
     NetworkConfig,
     PortConfig,
     EnvVar,
+    ReplicasConfig,
 )
 
 
@@ -40,36 +42,7 @@ def _validate_compute_resource(resource: Optional[str]) -> Optional[str]:
 
 
 @dataclass
-class ReplicasConfig:
-    min: int = 1
-    max: int = 2
-    container_concurrency: int = 100
-    target_concurrency: int = 100
-    scale_to_zero: bool = False
-
-    def __post_init__(self):
-        if self.min < 0:
-            raise ValueError('min must be >= 0')
-        if self.max < 1:
-            raise ValueError('max must be >= 1')
-        if self.max < self.min:
-            raise ValueError('max must be >= min')
-        if self.container_concurrency < 1:
-            raise ValueError('target_concurrency must be >= 1')
-        if self.target_concurrency < 1:
-            raise ValueError('target_concurrency must be >= 1')
-
-
-@dataclass
-class RegistryConfig:
-    server: Optional[str] = None
-    username: Optional[str] = None
-    password: Optional[str] = None
-    email: Optional[str] = None
-
-
-@dataclass
-class ContainerConfig:
+class _ContainerConfig:
     name: str
     image: str
     resource: Optional[str] = None
@@ -115,9 +88,9 @@ class ContainerConfig:
 
 
 @dataclass
-class DeployConfig:
+class _DeployConfig:
     app_name: str
-    containers: List[ContainerConfig]
+    containers: List[_ContainerConfig]
     version: str = "1.0"
     registry: Optional[RegistryConfig] = None
 
@@ -162,12 +135,12 @@ def _parse_registry(data: Optional[Dict[str, Any]]) -> Optional[RegistryConfig]:
 
 def _parse_container(
     data: Dict[str, Any], global_registry: Optional[RegistryConfig]
-) -> ContainerConfig:
+) -> _ContainerConfig:
     registry = _parse_registry(data.get('registry'))
     if registry is None and global_registry is not None:
         registry = global_registry
 
-    return ContainerConfig(
+    return _ContainerConfig(
         name=data['name'],
         image=data['image'],
         resource=data.get('resource'),
@@ -182,7 +155,7 @@ def _parse_container(
     )
 
 
-def load_config(filepath: Union[str, Path]) -> DeployConfig:
+def load_config(filepath: Union[str, Path]) -> _DeployConfig:
     path = Path(filepath)
 
     if not path.exists():
@@ -235,7 +208,7 @@ def load_config(filepath: Union[str, Path]) -> DeployConfig:
         containers = [_parse_container(c, global_registry) for c in containers_data]
 
         # Create config
-        return DeployConfig(
+        return _DeployConfig(
             app_name=data['app_name'],
             containers=containers,
             version=data.get('version', '1.0'),
@@ -274,7 +247,7 @@ def load_config(filepath: Union[str, Path]) -> DeployConfig:
         )
 
 
-def _config_to_dict(config: DeployConfig) -> Dict[str, Any]:
+def _config_to_dict(config: _DeployConfig) -> Dict[str, Any]:
     result: Dict[str, Any] = {
         'version': config.version,
         'app_name': config.app_name,
@@ -352,7 +325,7 @@ def convert_config_format(
 
 
 def config_to_serverless_requests(
-    config: DeployConfig,
+    config: _DeployConfig,
     app_id: Optional[str] = None,
 ) -> List[CreateServerlessResourceRequest]:
     requests = []

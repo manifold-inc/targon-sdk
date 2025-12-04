@@ -352,7 +352,7 @@ async def deploy_config(
             deployed_resources.append(resource)
 
             if console_instance:
-                console_instance.resource(request.name, resource.serverless_uid)
+                console_instance.resource(request.name, resource.uid)
 
         except Exception as e:
             if console_instance:
@@ -382,7 +382,7 @@ async def deploy_config(
                 requests[idx].name if idx < len(requests) else f"container-{idx}"
             )
             details_list.append(
-                f"  • {container_name}: https://{resource.serverless_uid}.serverless.targon.com"
+                f"  • {container_name}: https://{resource.uid}.serverless.targon.com"
             )
 
         details_list.append("")

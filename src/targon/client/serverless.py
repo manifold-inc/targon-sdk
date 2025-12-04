@@ -7,6 +7,7 @@ from targon.client.constants import (
 )
 from targon.core.exceptions import HydrationError, ValidationError
 from targon.core.objects import AsyncBaseHTTPClient
+from targon.core.resources import Compute
 
 
 def _validate_non_empty(value: Optional[str], field_name: str) -> str:
@@ -45,7 +46,7 @@ class RegistryCredentials:
 
 
 def _coerce_env(
-    env: Optional[Union[Dict[str, str], Sequence[EnvVar]]]
+    env: Optional[Union[Dict[str, str], Sequence[EnvVar]]],
 ) -> Optional[List[EnvVar]]:
     if env is None:
         return None
@@ -62,7 +63,9 @@ def _coerce_env(
                 )
             env_list.append(item)
         return env_list
-    raise ValidationError("env must be a dict or sequence of EnvVar objects", field="env")
+    raise ValidationError(
+        "env must be a dict or sequence of EnvVar objects", field="env"
+    )
 
 
 @dataclass(slots=True)
@@ -137,7 +140,9 @@ class NetworkConfig:
                 payload["port"] = self.port
             else:
                 raise ValidationError(
-                    "port must be a PortConfig or mapping", field="port", value=self.port
+                    "port must be a PortConfig or mapping",
+                    field="port",
+                    value=self.port,
                 )
         if self.visibility:
             payload["visibility"] = self.visibility
@@ -155,13 +160,14 @@ class CreateServerlessResourceRequest:
 
     def to_payload(self) -> Dict[str, Any]:
         if not self.name or not isinstance(self.name, str) or not self.name.strip():
-            raise ValidationError("name must be provided", field="name", value=self.name)
+            raise ValidationError(
+                "name must be provided", field="name", value=self.name
+            )
         payload: Dict[str, Any] = {
             "name": self.name.strip(),
             "container": self.container.to_payload(),
         }
-        if self.resource_name:
-            payload["resource_name"] = self.resource_name
+        payload["resource_name"] = self.resource_name or "cpu-small"
         if self.scaling:
             payload["scaling"] = self.scaling.to_payload()
         if self.network:
@@ -178,7 +184,9 @@ class CreateServerlessResourceRequest:
 
 @dataclass(slots=True)
 class CreateServerlessResponse:
-    serverless_uid: str
+    uid: str
+    name: str
+    url: str
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "CreateServerlessResponse":
@@ -187,16 +195,16 @@ class CreateServerlessResponse:
                 f"Expected dict for CreateServerlessResponse, got {type(data).__name__}",
                 object_type="CreateServerlessResponse",
             )
-        
-        serverless_uid = data.get("serverless_uid")
-        
-        if not serverless_uid:
+
+        uid = data.get("serverless_uid")
+        name = data.get("name")
+        if not uid:
             raise HydrationError(
                 "Missing serverless_uid in CreateServerlessResponse response",
                 object_type="CreateServerlessResponse",
             )
-        
-        return cls(serverless_uid=serverless_uid)
+        url = f"https://{uid}.serverless.targon.com"
+        return cls(uid=uid, name=name, url=url)
 
 
 @dataclass(slots=True)
@@ -223,14 +231,46 @@ class ServerlessResourceListItem:
         created_at = data.get("created_at")
         created_at_str = None
         if created_at is not None:
-            created_at_str = created_at if isinstance(created_at, str) else str(created_at)
+            created_at_str = (
+                created_at if isinstance(created_at, str) else str(created_at)
+            )
         return cls(
             uid=uid,
             name=data.get("name"),
-            url=data.get("url"),
-            cost=float(data.get("cost"))/1000,
+            url=data.get("url", f"https://{uid}.serverless.targon.com"),
+            cost=float(data.get("cost")) / 27777.5,
             created_at=created_at_str,
         )
+
+
+@dataclass
+class ReplicasConfig:
+    min: int = 1
+    max: int = 2
+    container_concurrency: int = 100
+    target_concurrency: int = 100
+    scale_to_zero: bool = False
+
+    def __post_init__(self):
+        if self.min < 0:
+            raise ValueError('min must be >= 0')
+        if self.max < 1:
+            raise ValueError('max must be >= 1')
+        if self.max < self.min:
+            raise ValueError('max must be >= min')
+        if self.container_concurrency < 1:
+            raise ValueError('target_concurrency must be >= 1')
+        if self.target_concurrency < 1:
+            raise ValueError('target_concurrency must be >= 1')
+
+
+@dataclass
+class RegistryConfig:
+    server: Optional[str] = None
+    username: Optional[str] = None
+    password: Optional[str] = None
+    email: Optional[str] = None
+
 
 class AsyncServerlessClient(AsyncBaseHTTPClient):
     def __init__(self, client):
@@ -242,7 +282,65 @@ class AsyncServerlessClient(AsyncBaseHTTPClient):
             return f"{SERVERLESS_ENDPOINT}/{suffix.lstrip('/')}"
         return SERVERLESS_ENDPOINT
 
-    async def deploy_container(self, request: CreateServerlessResourceRequest) -> CreateServerlessResponse:
+    async def deploy_container(
+        self,
+        request: Optional[CreateServerlessResourceRequest] = None,
+        *,
+        name: Optional[str] = None,
+        image: Optional[str] = None,
+        resource: Optional[str] = None,
+        command: Optional[List[str]] = None,
+        args: Optional[List[str]] = None,
+        working_dir: Optional[str] = None,
+        port: Optional[int] = None,
+        internal: bool = False,
+        env: Optional[Dict[str, str]] = None,
+        replicas: Optional[ReplicasConfig] = None,
+        registry: Optional[RegistryConfig] = None,
+    ) -> CreateServerlessResponse:
+
+        if request is None:
+            registry_creds = None
+            if registry:
+                registry_creds = RegistryCredentials(
+                    server=registry.server or "https://index.docker.io/v1/",
+                    username=registry.username or "",
+                    password=registry.password or "",
+                    email=registry.email,
+                )
+
+            scaling = None
+            if replicas:
+                scaling = AutoScalingConfig(
+                    min_replicas=replicas.min,
+                    max_replicas=replicas.max,
+                    container_concurrency=replicas.container_concurrency,
+                    target_concurrency=replicas.target_concurrency,
+                )
+
+            network = None
+            if port:
+                port_config = PortConfig(port=port)
+                visibility = "cluster-local" if internal else "external"
+                network = NetworkConfig(port=port_config, visibility=visibility)
+
+            container_config = ContainerConfig(
+                image=image,
+                command=command,
+                args=args,
+                env=env,
+                working_dir=working_dir,
+                registry_credentials=registry_creds,
+            )
+
+            request = CreateServerlessResourceRequest(
+                name=name,
+                resource_name=resource,
+                container=container_config,
+                scaling=scaling,
+                network=network,
+            )
+
         payload = request.to_payload()
         result = await self._async_post(self._resource_path(), json=payload)
         if not isinstance(result, dict):
@@ -253,9 +351,7 @@ class AsyncServerlessClient(AsyncBaseHTTPClient):
         return CreateServerlessResponse.from_dict(result)
 
     async def list_container(self) -> List[ServerlessResourceListItem]:
-        payload: Dict[str, Any] = {
-            "active_only": True
-        }
+        payload: Dict[str, Any] = {"active_only": True}
         result = await self._async_post(self._resource_path("list"), json=payload)
 
         if isinstance(result, dict):
@@ -276,7 +372,11 @@ class AsyncServerlessClient(AsyncBaseHTTPClient):
                 f"Expected dict or list from list_resources, got {type(result).__name__}",
                 object_type="ServerlessResourceList",
             )
-        return [ServerlessResourceListItem.from_dict(item) for item in items]
+        return [
+            ServerlessResourceListItem.from_dict(item)
+            for item in items
+            if "deleted" not in item
+        ]
 
     async def delete_container(self, resource_id: str) -> Dict[str, Any]:
         resource_id = _validate_non_empty(resource_id, "resource_id")

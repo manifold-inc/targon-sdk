@@ -19,7 +19,7 @@ T = TypeVar('T')
 
 class ClientMeta(type):
     """Metaclass to enable class-level property access for default client instance."""
-    
+
     _default_instance: 'Client' = None
     _lock = threading.Lock()
 
@@ -30,7 +30,7 @@ class ClientMeta(type):
                 if cls._default_instance is None:
                     cls._default_instance = cls.from_env()
         return cls._default_instance.async_serverless
-    
+
     @property
     def async_inventory(cls) -> AsyncInventoryClient:
         if cls._default_instance is None:
@@ -38,7 +38,7 @@ class ClientMeta(type):
                 if cls._default_instance is None:
                     cls._default_instance = cls.from_env()
         return cls._default_instance.async_inventory
-    
+
     @property
     def async_logs(cls) -> AsyncLogsClient:
         if cls._default_instance is None:
