@@ -348,7 +348,7 @@ async def deploy_config(
             if console_instance:
                 console_instance.substep(f"Deploying container: {request.name}")
 
-            resource = await client.async_serverless.deploy_resource(request)
+            resource = await client.async_serverless.deploy_container(request)
             deployed_resources.append(resource)
 
             if console_instance:

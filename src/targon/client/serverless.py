@@ -3,7 +3,7 @@ from typing import Any, Dict, List, Optional, Sequence, Union
 
 from targon.client.constants import (
     DEFAULT_BASE_URL,
-    DEPLOYMENT_ENDPOINT,
+    SERVERLESS_ENDPOINT,
 )
 from targon.core.exceptions import HydrationError, ValidationError
 from targon.core.objects import AsyncBaseHTTPClient
@@ -45,7 +45,7 @@ class RegistryCredentials:
 
 
 def _coerce_env(
-    env: Optional[Union[Dict[str, str], Sequence[EnvVar]]],
+    env: Optional[Union[Dict[str, str], Sequence[EnvVar]]]
 ) -> Optional[List[EnvVar]]:
     if env is None:
         return None
@@ -62,9 +62,7 @@ def _coerce_env(
                 )
             env_list.append(item)
         return env_list
-    raise ValidationError(
-        "env must be a dict or sequence of EnvVar objects", field="env"
-    )
+    raise ValidationError("env must be a dict or sequence of EnvVar objects", field="env")
 
 
 @dataclass(slots=True)
@@ -139,9 +137,7 @@ class NetworkConfig:
                 payload["port"] = self.port
             else:
                 raise ValidationError(
-                    "port must be a PortConfig or mapping",
-                    field="port",
-                    value=self.port,
+                    "port must be a PortConfig or mapping", field="port", value=self.port
                 )
         if self.visibility:
             payload["visibility"] = self.visibility
@@ -159,9 +155,7 @@ class CreateServerlessResourceRequest:
 
     def to_payload(self) -> Dict[str, Any]:
         if not self.name or not isinstance(self.name, str) or not self.name.strip():
-            raise ValidationError(
-                "name must be provided", field="name", value=self.name
-            )
+            raise ValidationError("name must be provided", field="name", value=self.name)
         payload: Dict[str, Any] = {
             "name": self.name.strip(),
             "container": self.container.to_payload(),
@@ -193,17 +187,50 @@ class CreateServerlessResponse:
                 f"Expected dict for CreateServerlessResponse, got {type(data).__name__}",
                 object_type="CreateServerlessResponse",
             )
-
+        
         serverless_uid = data.get("serverless_uid")
-
+        
         if not serverless_uid:
             raise HydrationError(
                 "Missing serverless_uid in CreateServerlessResponse response",
                 object_type="CreateServerlessResponse",
             )
-
+        
         return cls(serverless_uid=serverless_uid)
 
+
+@dataclass(slots=True)
+class ServerlessResourceListItem:
+    uid: str
+    name: Optional[str] = None
+    url: Optional[str] = None
+    cost: Optional[float] = None
+    created_at: Optional[str] = None
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "ServerlessResourceListItem":
+        if not isinstance(data, dict):
+            raise HydrationError(
+                f"Expected dict for ServerlessResourceListItem, got {type(data).__name__}",
+                object_type="ServerlessResource",
+            )
+        uid = data.get("uid")
+        if not uid:
+            raise HydrationError(
+                "Missing uid in ServerlessResourceListItem response",
+                object_type="ServerlessResource",
+            )
+        created_at = data.get("created_at")
+        created_at_str = None
+        if created_at is not None:
+            created_at_str = created_at if isinstance(created_at, str) else str(created_at)
+        return cls(
+            uid=uid,
+            name=data.get("name"),
+            url=data.get("url"),
+            cost=float(data.get("cost"))/1000,
+            created_at=created_at_str,
+        )
 
 class AsyncServerlessClient(AsyncBaseHTTPClient):
     def __init__(self, client):
@@ -212,12 +239,10 @@ class AsyncServerlessClient(AsyncBaseHTTPClient):
 
     def _resource_path(self, suffix: Optional[str] = None) -> str:
         if suffix:
-            return f"{DEPLOYMENT_ENDPOINT}/{suffix.lstrip('/')}"
-        return DEPLOYMENT_ENDPOINT
+            return f"{SERVERLESS_ENDPOINT}/{suffix.lstrip('/')}"
+        return SERVERLESS_ENDPOINT
 
-    async def deploy_resource(
-        self, request: CreateServerlessResourceRequest
-    ) -> CreateServerlessResponse:
+    async def deploy_container(self, request: CreateServerlessResourceRequest) -> CreateServerlessResponse:
         payload = request.to_payload()
         result = await self._async_post(self._resource_path(), json=payload)
         if not isinstance(result, dict):
@@ -227,7 +252,33 @@ class AsyncServerlessClient(AsyncBaseHTTPClient):
             )
         return CreateServerlessResponse.from_dict(result)
 
-    async def delete_resource(self, resource_id: str) -> Dict[str, Any]:
+    async def list_container(self) -> List[ServerlessResourceListItem]:
+        payload: Dict[str, Any] = {
+            "active_only": True
+        }
+        result = await self._async_post(self._resource_path("list"), json=payload)
+
+        if isinstance(result, dict):
+            items_raw = result.get("resources")
+            if items_raw is None:
+                raise HydrationError(
+                    "Serverless list response missing 'resources' array",
+                    object_type="ServerlessResourceList",
+                )
+            if not isinstance(items_raw, list):
+                raise HydrationError(
+                    f"'resources' in serverless list response must be a list, got {type(items_raw).__name__}",
+                    object_type="ServerlessResourceList",
+                )
+            items = items_raw
+        else:
+            raise HydrationError(
+                f"Expected dict or list from list_resources, got {type(result).__name__}",
+                object_type="ServerlessResourceList",
+            )
+        return [ServerlessResourceListItem.from_dict(item) for item in items]
+
+    async def delete_container(self, resource_id: str) -> Dict[str, Any]:
         resource_id = _validate_non_empty(resource_id, "resource_id")
         result = await self._async_delete(self._resource_path(resource_id))
         if not isinstance(result, dict):
