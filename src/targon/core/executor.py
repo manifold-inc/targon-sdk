@@ -16,6 +16,7 @@ from targon.core.exceptions import ValidationError, ServerlessError
 from targon.core.resolver import Resolver
 from targon.core.function import _Function
 from targon.core.utils import check_object_name
+from targon.utils.config_parser import config_to_serverless_requests
 
 
 @dataclasses.dataclass
@@ -244,7 +245,8 @@ async def deploy_app(
             [
                 "",
                 "Next steps:",
-                f"  • View app state: targon app get {running_app.app_id}\n",
+                f"  • View app state: targon app get {running_app.app_id}",
+                f"  • View func logs: targon logs {func_id}",
             ]
         )
 
@@ -310,3 +312,90 @@ async def run_app(
                 f"View status: targon app status {running_app.app_id}"
             )
         sys.exit(1)
+
+
+async def deploy_config(
+    config,  # DeployConfig type
+    client: Client,
+    console_instance: Optional[Console] = None,
+) -> RunningApp:
+    t0 = time.time()
+
+    # Initialize app
+    if console_instance:
+        console_instance.step("Initializing app")
+
+    running_app = RunningApp(
+        app_id=None,
+        app_name=config.app_name,
+        project_name="default",
+        app_page_url=None,
+    )
+
+    if console_instance:
+        console_instance.success(f"Parsing app: {config.app_name}")
+
+    # Convert config to serverless requests
+    requests = config_to_serverless_requests(config, app_id=running_app.app_id)
+
+    if console_instance:
+        console_instance.step(f"Deploying {len(requests)} container(s)")
+
+    # Deploy each container
+    deployed_resources = []
+    for request in requests:
+        try:
+            if console_instance:
+                console_instance.substep(f"Deploying container: {request.name}")
+
+            resource = await client.async_serverless.deploy_container(request)
+            deployed_resources.append(resource)
+
+            if console_instance:
+                console_instance.resource(request.name, resource.uid)
+
+        except Exception as e:
+            if console_instance:
+                console_instance.error(f"Failed to deploy {request.name}: {e}")
+            raise
+
+    if console_instance:
+        console_instance.success(f"Deployed {len(deployed_resources)} container(s)")
+
+    if console_instance:
+        details_list = [
+            f"App: {running_app.app_name}",
+        ]
+
+        if running_app.app_id:
+            details_list.append(f"App ID: {running_app.app_id}")
+
+        details_list.extend(
+            [
+                "",
+                "Deployed containers:",
+            ]
+        )
+
+        for idx, resource in enumerate(deployed_resources):
+            container_name = (
+                requests[idx].name if idx < len(requests) else f"container-{idx}"
+            )
+            details_list.append(
+                f"  • {container_name}: https://{resource.uid}.serverless.targon.com"
+            )
+
+        details_list.append("")
+
+        if running_app.app_id:
+            details_list.extend(
+                [
+                    "Next steps:",
+                    f"  • List containers: targon container ls",
+                    "",
+                ]
+            )
+
+        console_instance.final(f"Deployment completed", details_list)
+
+    return running_app

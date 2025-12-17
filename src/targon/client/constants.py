@@ -3,7 +3,7 @@ API_VERSION = "v1"
 
 # API Endpoints
 INVENTORY_ENDPOINT = f"/{API_VERSION}/capacity"
-DEPLOYMENT_ENDPOINT = f"/{API_VERSION}/serverless"
+SERVERLESS_ENDPOINT = f"/{API_VERSION}/serverless"
 
 # Heim Build Service
 HEIM_BASE_URL = "https://api.targon.com"

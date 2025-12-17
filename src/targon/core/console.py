@@ -30,35 +30,42 @@ class Console:
     _live: Optional[Live]
     _start_time: float
     _step_start_time: float
-    _lines: List[Union[str, Spinner, Tuple[Spinner, str]]]
     _current_step: str
     _active_spinner: Optional[Spinner]
     _active_step_message: str
+    _active_substep_message: str
+    _active_substep_detail: str
+    _active_detail: str
     _step_count: int
     _success_count: int
+    _header_printed: bool
 
     def __init__(self, app_name: Optional[str] = None) -> None:
-
         self.console = _rich_console
         self.app_name = app_name.strip() if app_name and app_name.strip() else None
         self._live = None
         self._start_time = 0.0
         self._step_start_time = 0.0
-        self._lines = []
         self._current_step = ""
         self._active_spinner = None
         self._active_step_message = ""
+        self._active_substep_message = ""
+        self._active_substep_detail = ""
+        self._active_detail = ""
         self._step_count = 0
         self._success_count = 0
+        self._header_printed = False
 
     def __enter__(self) -> "Console":
         self._start_time = time.time()
-        self._lines = []
         self._step_count = 0
         self._success_count = 0
+        self._header_printed = False
+
+        self._print_header()
 
         self._live = Live(
-            self._render(), console=self.console, refresh_per_second=10, transient=False
+            "", console=self.console, refresh_per_second=10, transient=True
         )
         self._live.start()
         return self
@@ -68,45 +75,73 @@ class Console:
             self._live.stop()
         self._live = None
 
+    def _print_header(self) -> None:
+        if self._header_printed:
+            return
+
+        # Simple clean divider
+        self.console.print()
+
+        table = Table.grid(padding=(0, 1))
+        table.add_column(justify="left", no_wrap=True)
+        table.add_column(justify="right")
+
+        left_text = Text()
+        if self.app_name:
+            left_text.append("▸ ", style="bright_blue")
+            left_text.append(self.app_name, style="bold")
+        else:
+            left_text.append("▸ ", style="bright_blue")
+            left_text.append("TARGON", style="bold")
+
+        right_text = Text()
+        right_text.append(time.strftime("%H:%M:%S"), style="dim")
+
+        table.add_row(left_text, right_text)
+
+        self.console.print(table)
+        self.console.print("─" * (self.console.width - 2), style="dim")
+        self.console.print()
+
+        self._header_printed = True
+
+    def _print_line(self, line: str) -> None:
+        """Print a completed line to the console"""
+        text = Text.from_markup(line)
+        # Ensure truncation for long lines
+        if len(text) > self.console.width - 2:
+            text.truncate(self.console.width - 2, overflow="ellipsis")
+        self.console.print(text, overflow="ellipsis", no_wrap=True)
+
     def step(self, message: str, detail: str = "") -> None:
         if self._active_step_message == message:
             return
 
+        # Clear any previous spinner
+        if self._active_spinner and self._live:
+            self._live.update("")
+
         self._step_start_time = time.time()
         self._current_step = message
         self._active_step_message = message
+        self._active_substep_message = ""
+        self._active_substep_detail = ""
+        self._active_detail = detail
         self._step_count += 1
 
-        self._active_spinner = Spinner(
-            "dots", text=f"[bold cyan]{message}[/bold cyan]", style="bright_cyan"
-        )
+        self._active_spinner = Spinner("dots", text=f"{message}", style="cyan")
 
-        if detail:
-            self._lines.append((self._active_spinner, detail))
-        else:
-            self._lines.append(self._active_spinner)
-
-        self._update()
+        self._update_spinner()
 
     def substep(self, message: str, detail: str = "") -> None:
-        line = f"  [bright_blue]▸[/bright_blue] {message}"
-        if detail:
-            line += f" [dim italic]{detail}[/dim italic]"
-
-        if (
-            self._lines
-            and isinstance(self._lines[-1], str)
-            and self._lines[-1].startswith("  [bright_blue]▸[/bright_blue]")
-        ):
-            self._lines[-1] = line
-        else:
-            self._lines.append(line)
-        self._update()
+        # Update live substep
+        self._active_substep_message = message
+        self._active_substep_detail = detail
+        self._update_spinner()
 
     def resource(self, name: str, resource_id: str) -> None:
-        line = f"  [dim]╰─[/dim] [bold yellow]{name}[/bold yellow] [dim]→[/dim] [bold green]{resource_id}[/bold green]"
-        self._lines.append(line)
-        self._update()
+        line = f"  [dim]╰[/dim] [cyan]{name}[/cyan] [dim]→[/dim] [green]{resource_id}[/green]"
+        self._print_line(line)
 
     def success(
         self, message: str, detail: str = "", duration: Optional[float] = None
@@ -123,57 +158,47 @@ class Console:
         if duration is None and self._step_start_time:
             duration = time.time() - self._step_start_time
 
-        if self._lines and (
-            isinstance(self._lines[-1], Spinner)
-            or (
-                isinstance(self._lines[-1], tuple)
-                and isinstance(self._lines[-1][0], Spinner)
-            )
-        ):
-            self._lines.pop()
+        # Clear spinner
+        if self._live:
+            self._live.update("")
 
         self._active_spinner = None
+        self._active_substep_message = ""
+        self._active_substep_detail = ""
         self._success_count += 1
 
-        line = f"[bold green]✔[/bold green] [bold]{message}[/bold]"
+        line = f"[green]✓[/green] {message}"
         if detail:
-            line += f" [dim italic]{detail}[/dim italic]"
+            line += f" [dim]· {detail}[/dim]"
         if duration is not None and duration > 0:
-            line += f" [dim bright_black]· {duration:.2f}s[/dim bright_black]"
+            line += f" [dim]{duration:.2f}s[/dim]"
 
-        self._lines.append(line)
-        self._update()
+        self._print_line(line)
 
     def error(self, message: str, detail: str = "") -> None:
-        if self._lines and (
-            isinstance(self._lines[-1], Spinner)
-            or (
-                isinstance(self._lines[-1], tuple)
-                and isinstance(self._lines[-1][0], Spinner)
-            )
-        ):
-            self._lines.pop()
+        # Clear spinner
+        if self._live:
+            self._live.update("")
 
         self._active_spinner = None
+        self._active_substep_message = ""
+        self._active_substep_detail = ""
 
-        line = f"[bold red]✖[/bold red] [bold]{message}[/bold]"
+        line = f"[red]✗[/red] {message}"
         if detail:
-            line += f" [dim italic]{detail}[/dim italic]"
+            line += f" [dim]· {detail}[/dim]"
 
-        self._lines.append(line)
-        self._update()
+        self._print_line(line)
 
     def info(self, message: str, detail: str = "") -> None:
-        line = f"[bright_blue]ℹ[/bright_blue] {message}"
+        line = f"[cyan]→[/cyan] {message}"
         if detail:
-            line += f" [dim italic]{detail}[/dim italic]"
+            line += f" [dim]· {detail}[/dim]"
 
-        self._lines.append(line)
-        self._update()
+        self._print_line(line)
 
     def separator(self) -> None:
-        self._lines.append("")
-        self._update()
+        self.console.print()
 
     def final(self, message: str, details: Optional[List[str]] = None) -> None:
         if details is not None:
@@ -185,103 +210,60 @@ class Console:
                         value=type(detail).__name__,
                     )
 
+        # Clear spinner
+        if self._live:
+            self._live.update("")
+
         total_duration = time.time() - self._start_time if self._start_time else 0
 
         self.separator()
-        self._lines.append(f"[bold bright_green]✨ {message}[/bold bright_green]")
+        self.console.print("─" * (self.console.width - 2), style="dim")
 
+        # Success message
+        msg_line = f"[bold green]✓[/bold green] {message}"
         if total_duration > 0:
-            self._lines.append(
-                f"[dim bright_black]   Completed in {total_duration:.2f}s[/dim bright_black]"
+            msg_line += f" [dim]({total_duration:.2f}s)[/dim]"
+
+        self._print_line(msg_line)
+
+        if self._step_count > 0:
+            stats_line = (
+                f"  [dim]{self._success_count}/{self._step_count} steps completed[/dim]"
             )
+            self._print_line(stats_line)
 
         if details:
-            self._lines.append("")
+            self.console.print()
             for detail in details:
-                self._lines.append(f"[dim]   {detail}[/dim]")
+                self._print_line(f"  [dim]{detail}[/dim]")
 
-        self._update()
+        self.console.print()
 
-    def _update(self) -> None:
-        if self._live:
-            self._live.update(self._render())
+    def _update_spinner(self) -> None:
+        """Update the live spinner display"""
+        if not self._live or not self._active_spinner:
+            return
 
-    def _create_header(self) -> Panel:
-        if not self.app_name:
-            # Create a simple targon header
-            header_content = Text()
-            header_content.append("TARGON", style="bold blue")
-            return Panel(
-                Align.center(header_content),
-                border_style="bright_blue",
-                box=box.ROUNDED,
-                padding=(0, 0),
-            )
+        rendered_lines: List[Any] = [self._active_spinner]
 
-        # Create app-specific header with stats
-        table = Table.grid(padding=(0, 2))
-        table.add_column(justify="left")
-        table.add_column(justify="right")
+        if self._active_detail:
+            detail_text = Text.from_markup(f"  [dim]{self._active_detail}[/dim]")
+            if len(detail_text) > self.console.width - 4:
+                detail_text.truncate(self.console.width - 4, overflow="ellipsis")
+            rendered_lines.append(detail_text)
 
-        app_text = Text()
-        app_text.append(self.app_name, style="bold blue")
+        if self._active_substep_message:
+            line = f"  [dim]│[/dim] {self._active_substep_message}"
+            if self._active_substep_detail:
+                line += f" [dim]· {self._active_substep_detail}[/dim]"
 
-        stats_text = Text()
-        if self._step_count > 0:
-            stats_text.append(
-                f"{self._success_count}/{self._step_count} steps",
-                style="dim bright_black",
-            )
-
-        table.add_row(app_text, stats_text)
-
-        return Panel(
-            table,
-            border_style="dim",
-            box=box.ROUNDED,
-            padding=(0, 1),
-        )
-
-    def _render(self) -> Union[Panel, Group, Text]:
-        rendered_lines: List[Any] = []
-
-        # Add header if we have an app name or want to show branding
-        if self.app_name or self._step_count > 0:
-            rendered_lines.append(self._create_header())
-            rendered_lines.append(Text(""))
-
-        # Render content lines
-        for item in self._lines:
-            if isinstance(item, Spinner):
-                rendered_lines.append(item)
-            elif (
-                isinstance(item, tuple)
-                and len(item) == 2
-                and isinstance(item[0], Spinner)
-            ):
-                spinner, detail = item
-                rendered_lines.append(spinner)
-                rendered_lines.append(
-                    Text.from_markup(f"  [dim italic]{detail}[/dim italic]")
-                )
-            elif isinstance(item, str):
-                if item:
-                    rendered_lines.append(Text.from_markup(item))
-                else:
-                    rendered_lines.append(Text(""))
-
-        if not rendered_lines:
-            return Text("")
+            substep_text = Text.from_markup(line)
+            if len(substep_text) > self.console.width - 2:
+                substep_text.truncate(self.console.width - 2, overflow="ellipsis")
+            rendered_lines.append(substep_text)
 
         content = Group(*rendered_lines)
-
-        # Wrap everything in a subtle panel for a cleaner look
-        return Panel(
-            content,
-            border_style="dim bright_black",
-            padding=(1, 2),
-            box=box.ROUNDED,
-        )
+        self._live.update(content)
 
 
 @contextmanager

@@ -1,4 +1,5 @@
 import json
+import os
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from aiohttp import ClientResponse, ClientTimeout, ClientError
@@ -87,7 +88,12 @@ class AsyncHeimClient(AsyncBaseHTTPClient):
     ) -> str:
         registry_ref: Optional[str] = None
         current_step: Optional[str] = None
-
+        verbose = os.getenv("TARGON_BUILD_LOGS", "").lower() in (
+            "1",
+            "true",
+            "yes",
+            "on",
+        )
         try:
             async for line in response.content:
                 if not line:

@@ -1,3 +1,4 @@
+import threading
 import requests
 import aiohttp
 import asyncio
@@ -5,6 +6,7 @@ from typing import Callable, Any, TypeVar
 from requests.adapters import HTTPAdapter, Retry
 from targon.cli.auth import get_api_key
 from targon.client.inventory import AsyncInventoryClient
+from targon.client.serverless import AsyncServerlessClient
 from targon.core.config import Config
 from targon.client.heim import AsyncHeimClient
 from targon.client.functions import AsyncFunctionsClient
@@ -15,7 +17,38 @@ from targon.client.logs import AsyncLogsClient
 T = TypeVar('T')
 
 
-class Client:
+class ClientMeta(type):
+    """Metaclass to enable class-level property access for default client instance."""
+
+    _default_instance: 'Client' = None
+    _lock = threading.Lock()
+
+    @property
+    def async_serverless(cls) -> AsyncServerlessClient:
+        if cls._default_instance is None:
+            with cls._lock:
+                if cls._default_instance is None:
+                    cls._default_instance = cls.from_env()
+        return cls._default_instance.async_serverless
+
+    @property
+    def async_inventory(cls) -> AsyncInventoryClient:
+        if cls._default_instance is None:
+            with cls._lock:
+                if cls._default_instance is None:
+                    cls._default_instance = cls.from_env()
+        return cls._default_instance.async_inventory
+
+    @property
+    def async_logs(cls) -> AsyncLogsClient:
+        if cls._default_instance is None:
+            with cls._lock:
+                if cls._default_instance is None:
+                    cls._default_instance = cls.from_env()
+        return cls._default_instance.async_logs
+
+
+class Client(metaclass=ClientMeta):
     """
     Targon SDK Client
     Handles authentication, configuration, and exposes various service clients lazily.
@@ -37,6 +70,7 @@ class Client:
         self._async_app = None
         self._async_publish = None
         self._async_logs = None
+        self._async_serverless = None
 
     def _init_session(self) -> requests.Session:
         session = requests.Session()
@@ -109,6 +143,12 @@ class Client:
         if self._async_logs is None:
             self._async_logs = AsyncLogsClient(self)
         return self._async_logs
+
+    @property
+    def async_serverless(self) -> AsyncServerlessClient:
+        if self._async_serverless is None:
+            self._async_serverless = AsyncServerlessClient(self)
+        return self._async_serverless
 
     @classmethod
     def from_env(cls):
