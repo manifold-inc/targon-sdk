@@ -1,5 +1,6 @@
 import click
 import sys
+import asyncio
 from typing import Union
 from rich.console import Console
 from targon import Client
@@ -22,6 +23,18 @@ def display_error(err: Union[Exception, str], title: str = "Error"):
     console.print()
     console.print(f"[red]{str(err)}[/red]")
     console.print()
+
+
+def _cleanup_client(client: Client):
+    """Cleanup function to close client sessions on exit."""
+    def cleanup():
+        client.close()
+        if client._async_session is not None and not client._async_session.closed:
+            try:
+                asyncio.run(client._async_session.close())
+            except Exception:
+                pass  
+    return cleanup
 
 
 class SafeGroup(click.Group):
@@ -50,9 +63,16 @@ class SafeGroup(click.Group):
 def cli(ctx):
     """Targon SDK CLI - Interact with Targon for secure compute."""
     ctx.ensure_object(dict)
+    
+    # Skip client initialization for setup command (it doesn't need auth)
+    if ctx.invoked_subcommand == "setup":
+        return
+    
     try:
         resolved_api_key = get_api_key()
-        ctx.obj["client"] = Client(api_key=resolved_api_key)
+        client = Client(api_key=resolved_api_key)
+        ctx.obj["client"] = client
+        ctx.call_on_close(_cleanup_client(client))
     except Exception as e:
         # Catch auth errors specifically if they happen during init
         if isinstance(e, (TargonError, APIError)):

@@ -1,6 +1,5 @@
 import click
-import keyring
-from targon.cli.auth import APP_NAME
+from targon.cli.auth import get_stored_key, save_api_key
 from ..core.console import _rich_console
 
 
@@ -9,7 +8,7 @@ def setup():
     _rich_console.print("\n[bold bright_cyan]Targon CLI Setup[/bold bright_cyan]\n")
 
     # Check if already configured
-    existing_key = keyring.get_password(APP_NAME, "default")
+    existing_key = get_stored_key()
     if existing_key:
         _rich_console.print("[bright_blue]ℹ[/bright_blue] API key already configured.")
         if not click.confirm("Do you want to update it?"):
@@ -28,16 +27,14 @@ def setup():
         )
         return
 
-    # Save to keyring
-    try:
-        keyring.set_password(APP_NAME, "default", api_key)
+    if save_api_key(api_key):
         _rich_console.print(
             "\n[bold green]✔[/bold green] [bold]API key saved successfully![/bold]"
         )
         _rich_console.print(
             "[dim italic]  You're ready to use Targon. Try 'targon app list' to get started.[/dim italic]\n"
         )
-    except Exception as e:
+    else:
         _rich_console.print(
-            f"\n[bold red]✖[/bold red] [bold]Failed to save API key:[/bold] {e}\n"
+            "\n[bold red]✖[/bold red] [bold]Failed to save API key.[/bold] You can set TARGON_API_KEY environment variable instead.\n"
         )
