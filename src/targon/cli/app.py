@@ -52,10 +52,10 @@ def app():
     """Manage Targon applications."""
     pass
 
-
+@app.command("ls")
 @click.pass_context
 def list_apps(ctx):
-    """List targon apps that are currently deployed/running."""
+    """List of deployed/running targon apps."""
     client: Client = ctx.obj["client"]
 
     try:
@@ -117,10 +117,6 @@ def list_apps(ctx):
     except Exception as e:
         display_error(e, "Unexpected error")
         raise SystemExit(1)
-
-
-app.command("list", hidden=True)(list_apps)
-app.command("ls")(list_apps)
 
 
 def _display_function_details(response: Any):
@@ -252,19 +248,11 @@ def _display_app_details(response: Any):
     else:
         console.print("\n[dim italic]No functions deployed in this app.[/dim italic]")
 
-
-app.command("list")(list_apps)
-app.command("ls")(list_apps)
-
-
 @app.command("get")
 @click.argument("identifier", required=True)
 @click.pass_context
 def app_get(ctx, identifier):
-    """Get detailed information about an app or function.
-
-    IDENTIFIER: App ID or Function UID (e.g., app-xxxxx or fnc-xxxxx)
-    """
+    """Get detailed info about an app or function."""
     client: Client = ctx.obj["client"]
 
     try:
@@ -314,7 +302,7 @@ def app_get(ctx, identifier):
 @click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompt")
 @click.pass_context
 def delete_app(ctx, app_ids, yes):
-    """Remove one or more Targon apps and all their deployments."""
+    """Remove the app/s and all of its deployments."""
     client: Client = ctx.obj["client"]
 
     if not app_ids:
@@ -400,12 +388,3 @@ def delete_app(ctx, app_ids, yes):
     except Exception as e:
         display_error(e, "Unexpected Error")
         raise SystemExit(1)
-
-
-@app.command("delete", hidden=True)
-@click.argument("app_ids", nargs=-1, required=True)
-@click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompt")
-@click.pass_context
-def remove_app(ctx, app_ids, yes):
-    """Remove one or more Targon apps and all their deployments."""
-    ctx.invoke(delete_app, app_ids=app_ids, yes=yes)
