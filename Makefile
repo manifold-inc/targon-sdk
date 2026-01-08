@@ -1,12 +1,24 @@
 # Makefile for Targon SDK development
-.PHONY: proto install install-dev test format lint type-check clean 
+.PHONY: proto install install-dev test format lint type-check clean
 
 help:
 	@echo "Available commands:"
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
 install: ## Install the package
-	pip install -e .
+	@pip install -e .
+	@SHELL_NAME=$$(basename "$$SHELL"); \
+	if [ "$$SHELL_NAME" = "zsh" ]; then \
+		RC="$$HOME/.zshrc"; \
+		CMD='eval "$$(_TARGON_COMPLETE=zsh_source targon)"'; \
+	elif [ "$$SHELL_NAME" = "fish" ]; then \
+		RC="$$HOME/.config/fish/config.fish"; \
+		CMD='_TARGON_COMPLETE=fish_source targon | source'; \
+	else \
+		RC="$$HOME/.bashrc"; \
+		CMD='eval "$$(_TARGON_COMPLETE=bash_source targon)"'; \
+	fi; \
+	grep -q "_TARGON_COMPLETE" "$$RC" 2>/dev/null || echo "$$CMD" >> "$$RC"
 
 proto:
 	@echo "Compiling protocol buffers..."
