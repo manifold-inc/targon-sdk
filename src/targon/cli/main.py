@@ -57,12 +57,17 @@ class SafeGroup(click.Group):
             sys.exit(1)
 
 
-@click.group(cls=SafeGroup)
+@click.group(cls=SafeGroup, invoke_without_command=True)
 @click.version_option(__version__, prog_name="Targon CLI")
 @click.pass_context
 def cli(ctx):
     """Targon SDK CLI - Interact with Targon for secure compute."""
     ctx.ensure_object(dict)
+    
+    # If no subcommand is provided, print help
+    if ctx.invoked_subcommand is None:
+        click.echo(ctx.get_help())
+        return
     
     # Skip client initialization for setup command (it doesn't need auth)
     if ctx.invoked_subcommand == "setup":
