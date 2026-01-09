@@ -110,6 +110,9 @@ class _StubCompute:
     H200_LARGE = "h200-large"
     H200_XL = "h200-xl"
 
+    RTX4090_SMALL="rtx4090-small"
+    RTX4090_MEDIUM="rtx4090-medium"
+    RTX4090_LARGE="rtx4090-large"
 
 def _stub_decorator(*args, **kwargs):
     def decorator(func):
