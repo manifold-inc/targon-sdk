@@ -37,9 +37,9 @@ def find_default_config() -> Path | None:
 
 
 @click.command()
-@click.argument("target", required=True)
+@click.argument("target", required=True, type=click.Path(exists=True))
 @click.option("--name", help="Override Name of the deployment.")
-@click.option("--config", help="Path to configuration file (YAML/JSON)")
+@click.option("--config", type=click.Path(exists=True), help="Path to configuration file (YAML/JSON)")
 @click.pass_context
 def deploy(ctx, target, name, config):
     """Deploy an application to Targon."""
