@@ -69,8 +69,8 @@ def cli(ctx):
         click.echo(ctx.get_help())
         return
     
-    # Skip client initialization for setup command (it doesn't need auth)
-    if ctx.invoked_subcommand == "setup":
+    # Skip client initialization for commands that don't need auth
+    if ctx.invoked_subcommand in ("setup", "completion"):
         return
     
     try:
@@ -85,6 +85,42 @@ def cli(ctx):
         # For other errors during setup, we might want to let them bubble
         # to the SafeGroup handler, but providing context is good.
         raise TargonError(f"Failed to initialize client: {e}") from e
+
+
+@cli.command()
+@click.option(
+    "-s", "--shell",
+    type=click.Choice(["bash", "zsh", "fish"]),
+    help="Shell type (auto-detected if not provided).",
+)
+def completion(shell: str):
+    """Install shell completion to virtualenv."""
+    import os
+    from pathlib import Path
+    
+    # Auto-detect shell if not provided
+    if not shell:
+        shell = Path(os.environ.get("SHELL", "bash")).name
+        if shell not in ("bash", "zsh", "fish"):
+            shell = "bash"
+    
+    venv = os.environ.get("VIRTUAL_ENV")
+    if not venv:
+        raise click.ClickException("Not in a virtualenv. Activate one first.")
+    
+    activate = Path(venv) / "bin" / "activate"
+    if not activate.exists():
+        raise click.ClickException(f"Activate script not found: {activate}")
+    
+    content = activate.read_text()
+    
+    if "_TARGON_COMPLETE" in content:
+        click.echo("Completions already installed.")
+        return
+    
+    line = f'\neval "$(_TARGON_COMPLETE={shell}_source targon)"\n'
+    activate.write_text(content + line)
+    click.echo(f"Installed completions to {activate}. Run: source {activate}")
 
 
 # Register commands
