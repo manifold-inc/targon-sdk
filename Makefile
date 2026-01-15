@@ -1,15 +1,19 @@
 # Makefile for Targon SDK development
-.PHONY: proto install install-dev test format lint type-check clean 
+.PHONY: help install install-dev build proto test test-cov format lint type-check check clean clean-proto
 
 help:
 	@echo "Available commands:"
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
-install: ## Install the package
+install:
 	pip install -e .
 
+build:
+	pip install -U build wheel
+	python -m build
+
 proto:
-	@echo "Compiling protocol buffers..."
+	@echo "Compiling protocol buffers."
 	cd src/targon/proto && \
 	python -m grpc_tools.protoc \
 		-I. \
@@ -17,26 +21,26 @@ proto:
 		--grpc_python_out=. \
 		--pyi_out=. \
 		function_execution.proto
-	@echo "Fixing imports in generated files..."
+	@echo "Fixing imports in generated files."
 	sed -i '' 's/^import function_execution_pb2/from . import function_execution_pb2/' src/targon/proto/function_execution_pb2_grpc.py
-	@echo "✓ Proto compilation complete"
+	@echo "Proto compilation complete."
 
 test-cov:
 	python -m pytest tests/ --cov=src/targon --cov-report=html --cov-report=term
 
-format: ## Format code with black
+format: 
 	black src/ 
 
-lint: ## Run flake8 linter
+lint: 
 	flake8 src/
 
-type-check: ## Run mypy type checking
+type-check: 
 	mypy src/
 
-check: format lint type-check test ## Run all checks
+check: format lint type-check test 
 
-clean: ## Clean build artifacts
-	@echo "Cleaning generated files..."
+clean: 
+	@echo "Cleaning generated files."
 	rm -rf build/
 	rm -rf dist/
 	rm -rf *.egg-info/
@@ -45,8 +49,8 @@ clean: ## Clean build artifacts
 	rm -rf htmlcov/
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 	find . -type f -name "*.pyc" -delete
-	find . -type f -name "*_pb2.py" -delete
-	find . -type f -name "*_pb2_grpc.py" -delete
-	find . -type f -name "*_pb2.pyi" -delete
-	@echo "✓ Clean complete"
+	@echo "Cleaning complete."
+
+clean-proto:
+	rm -f src/targon/proto/*_pb2.py src/targon/proto/*_pb2_grpc.py src/targon/proto/*_pb2.pyi
 
