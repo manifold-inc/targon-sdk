@@ -2,15 +2,11 @@
 
 Python SDK for building and deploying serverless applications on the Targon platform. It includes the command-line client, decorator-friendly runtime APIs, and publishing utilities.
 
----
-
 ## Requirements
 
 - Python **3.9+**
 - Targon account with API access  
 - Optional: Docker (for advanced image customization)
-
----
 
 ## Installation
 
@@ -27,8 +23,6 @@ git clone https://github.com/manifold-inc/targon-sdk.git
 cd targon-sdk
 pip install -e .
 ```
-
----
 
 ## Quick Start
 
@@ -70,8 +64,6 @@ pip install -e .
    targon run my_app.py --message "hello"
    ```
 
----
-
 ## CLI Overview
 
 | Command | Description |
@@ -82,8 +74,6 @@ pip install -e .
 | `targon app list` | List deployed/running apps. |
 | `targon app functions <app_id>` | Inspect functions for a given app. |
 | `targon app delete <app_id>` | Delete an app and its deployments. |
-
----
 
 ## Examples
 
@@ -101,8 +91,6 @@ Deploy an example directly:
 targon deploy examples/gettin_started/getting_started.py
 ```
 
----
-
 ## Development Notes
 
 - The SDK mirrors common serverless-style patterns: decorator-based registration, cloudpickle serialization, and runtime-provisioned images.
@@ -113,7 +101,8 @@ targon deploy examples/gettin_started/getting_started.py
 - Tests live under `tests/`. Run them with `pytest` (optional dependency).
 - When contributing protocol changes, regenerate stubs with the matching `grpcio-tools` version to avoid runtime mismatches.
 
----
+## Changelog
+See [`CHANGELOG.md`](CHANGELOG.md) for notable changes by release.
 
 ## Support & Feedback
 
