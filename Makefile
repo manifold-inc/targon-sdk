@@ -1,9 +1,5 @@
 # Makefile for Targon SDK development
-.PHONY: help install install-dev build proto test test-cov format lint type-check check clean clean-proto
-
-help:
-	@echo "Available commands:"
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
+.PHONY: install install-dev build proto test test-cov format lint type-check check clean clean-proto
 
 install:
 	pip install -e .
