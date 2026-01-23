@@ -1,109 +1,97 @@
-# Targon SDK
+<h1 align="center">
+  <img src="https://targon.com/targon-logo.svg" alt="Targon" width="32" style="vertical-align: bottom;">
+  Targon SDK
+</h1>
 
-Python SDK for building and deploying serverless applications on the Targon platform. It includes the command-line client, decorator-friendly runtime APIs, and publishing utilities.
+<p align="center">
+  <strong>Build and deploy serverless Python on GPUs — in seconds, not hours.</strong>
+</p>
 
-## Requirements
 
-- Python **3.9+**
-- Targon account with API access  
-- Optional: Docker (for advanced image customization)
+<p align="center">
+   | <a href="#installation"><b>Install</b></a> |
+   <a href="#getting-started"><b>Getting Started</b></a> |
+   <a href="https://github.com/manifold-inc/targon-sdk/tree/main/examples"><b>Examples</b></a> |
+   <a href="https://docs.targon.com/sdk/app"><b>Documentation</b></a> |
+</p>
+
+
+<p align="center">
+  <img alt="Status" src="https://img.shields.io/badge/status-stable-brightgreen">
+  <a href="https://pypi.org/project/targon-sdk/"><img alt="PyPI" src="https://img.shields.io/pypi/v/targon-sdk?color=blue&label=PyPI"></a>
+  <img alt="Python" src="https://img.shields.io/badge/python-3.9+-orange">
+  <a href="https://github.com/manifold-inc/targon-sdk/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/github/license/manifold-inc/targon-sdk"></a>
+</p>
+
+
+
+## About
+
+Targon SDK is a Python framework for building and deploying serverless applications on the Targon platform. Define your app, decorate your functions, and deploy — the SDK handles containers, scaling, and infrastructure.
+
+- **Zero infrastructure** — No containers to build, no clusters to manage
+- **GPU-first** — H100, H200, and more. Request with `resource="h200-small"`
+- **Web endpoints** — `@targon.fastapi_endpoint()` turns functions into APIs
+- **Scales to zero** — Pay only when your code runs
+- **Custom images** — Build containers in Python with `pip_install()`, `env()`, and more
+
+> **Stability:** The Targon SDK follows semantic versioning. Breaking changes
+> are only introduced in major releases.
 
 ## Installation
 
-### From PyPI
+**Requires Python 3.9+**
 
 ```bash
 pip install targon-sdk
 ```
 
-### From source
-
+**Install from source**
 ```bash
 git clone https://github.com/manifold-inc/targon-sdk.git
 cd targon-sdk
 pip install -e .
 ```
 
-## Quick Start
+## Getting Started
 
-1. **Configure credentials**
+```python
+import targon
 
-   ```bash
-   targon setup
-   # Follow the prompts to store your API key securely
-   ```
+app = targon.App("hello-world", image=targon.Image.debian_slim())
 
-2. **Define an app**
+@app.function(resource=targon.Compute.CPU_SMALL)
+def greet(name: str) -> str:
+    return f"Hello, {name}!"
 
-   ```python
-   # my_app.py
-   import targon
-   import subprocess
-
-   app = targon.App("my-first-app")
-
-   @app.function()
-   @targon.web_server(port=8000)
-   def serve():
-       subprocess.Popen("python -m http.server 8000", shell=True)
-
-   @app.local_entrypoint()
-   def main():
-       print("Hello from Targon!")
-   ```
-
-3. **Deploy**
-
-   ```bash
-   targon deploy my_app.py
-   ```
-
-4. **Iterate locally**
-
-   ```bash
-   targon run my_app.py --message "hello"
-   ```
-
-## CLI Overview
-
-| Command | Description |
-| ------- | ----------- |
-| `targon setup` | Store or update API credentials. |
-| `targon deploy <file.py>` | Build and deploy an app module. |
-| `targon run <file.py>` | Execute a local entrypoint in an ephemeral session. |
-| `targon app list` | List deployed/running apps. |
-| `targon app functions <app_id>` | Inspect functions for a given app. |
-| `targon app delete <app_id>` | Delete an app and its deployments. |
-
-## Examples
-
-Visit `examples/` for ready-to-run templates:
-
-- `gettin_started/getting_started.py` – minimal hello world workflow.
-- `gettin_started/web_endpoint_simple.py` – FastAPI endpoint via `@targon.fastapi_endpoint`.
-- `web/web_endpoint_asgi.py` – full ASGI application deployment.
-- `llm/vllm_example.py` – vLLM inference service running behind `@targon.web_server`.
-- `gen-ai/` – generated media workloads.
-
-Deploy an example directly:
-
-```bash
-targon deploy examples/gettin_started/getting_started.py
+@app.local_entrypoint()
+def main():
+    print(greet.remote("World"))
 ```
 
-## Development Notes
+```bash
+# Authenticate
+targon setup
 
-- The SDK mirrors common serverless-style patterns: decorator-based registration, cloudpickle serialization, and runtime-provisioned images.
-- Core packages used at runtime:
-  - `cloudpickle` for function transport
-  - `grpcio` / `grpcio-tools` for RPC communication
-  - `aiohttp` for async HTTP interactions
-- Tests live under `tests/`. Run them with `pytest` (optional dependency).
-- When contributing protocol changes, regenerate stubs with the matching `grpcio-tools` version to avoid runtime mismatches.
+# Run remotely
+targon run hello.py
+
+# Deploy as a service
+targon deploy hello.py
+```
+
+## Contributing
+
+We welcome contributions! Please see our contributing guidelines before submitting PRs.
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes with tests
+4. Submit a pull request
+
 
 ## Changelog
-See [`CHANGELOG.md`](CHANGELOG.md) for notable changes by release.
+See [CHANGELOG.md](CHANGELOG.md) for release notes.
 
-## Support & Feedback
 
-Open an issue or reach out to `dev@manifold.inc` for questions, feature requests, or bug reports. Contributions are welcome!  
+## License
+Apache 2.0 — see [LICENSE](LICENSE) for details.
