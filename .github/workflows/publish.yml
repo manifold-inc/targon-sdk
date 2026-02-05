@@ -13,7 +13,7 @@ jobs:
     name: Build & Upload to PyPI
     runs-on: ubuntu-latest
     environment:
-      name: pypi
+      name: release
       url: https://pypi.org/p/targon-sdk
       
     permissions:
