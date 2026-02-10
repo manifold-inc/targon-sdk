@@ -16,6 +16,11 @@ class Compute:
     H100_MEDIUM = "h100-medium"
     H100_LARGE = "h100-large"
     H100_XL = "h100-xl"
+    # B200s
+    B200_SMALL = "b200-small"
+    B200_MEDIUM = "b200-medium"
+    B200_LARGE = "b200-large"
+    B200_XL = "b200-xl"
     # RTX4090s
     RTX4090_SMALL="rtx4090-small"
     RTX4090_MEDIUM="rtx4090-medium"
