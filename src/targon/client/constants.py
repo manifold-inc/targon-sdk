@@ -1,8 +1,9 @@
-DEFAULT_BASE_URL = "https://api.targon.com"
+DEFAULT_BASE_URL = "http://localhost:8080"
 API_VERSION = "v1"
+API_VERSION_V2 = "/tha/v2"
 
 # API Endpoints
-INVENTORY_ENDPOINT = f"/{API_VERSION}/capacity"
+INVENTORY_ENDPOINT = f"{API_VERSION_V2}/inventory"
 SERVERLESS_ENDPOINT = f"/{API_VERSION}/serverless"
 
 # Heim Build Service
