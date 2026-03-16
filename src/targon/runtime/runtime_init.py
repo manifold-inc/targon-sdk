@@ -120,6 +120,8 @@ class _StubCompute:
     B200_MEDIUM = "b200-medium"
     B200_LARGE = "b200-large"
     B200_XL = "b200-xl"
+    # RTXP6000B
+    RTXP6000B_SMALL = "rtx6000B-small"
     # RTX4090s
     RTX4090_SMALL="rtx4090-small"
     RTX4090_MEDIUM="rtx4090-medium"
