@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - API layer upgrade planned for release in **v1.0.0**.
 
-## [0.5.0] - 2026-10-26
+## [0.5.0] - 2026-04-16
 - Added the support for RTX Pro 6000 Blackwell gpus.
 
 ## [0.4.0] - 2026-10-26
