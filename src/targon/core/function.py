@@ -207,13 +207,13 @@ class _Invocation:
         )
 
 
-class _Function(_Object, type_prefix="fnc"):
+class _Function(_Object, type_prefix="wrk"):
     """Functions are the basic units of serverless execution on Targon."""
 
     # Function metadata
     _web_url: str | None = None
     _grpc_endpoint: Union[Tuple[str, int], str] | None = None
-    _revision: int | None = None
+    _revision: str | None = None
     _webhook_config: WebhookConfig | None = None
     _raw_f: Callable | None = None
     # App/Object context
