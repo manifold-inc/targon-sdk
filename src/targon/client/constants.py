@@ -4,26 +4,23 @@ API_VERSION_V2 = "/tha/v2"
 
 # API Endpoints
 INVENTORY_ENDPOINT = f"{API_VERSION_V2}/inventory"
-SERVERLESS_ENDPOINT = f"/{API_VERSION}/serverless"
 
 # Heim Build Service
 HEIM_BASE_URL = "https://api.targon.com"
 HEIM_BUILD_ENDPOINT = f"/{API_VERSION}/heim/build"
 
-# Function Service
-FUNC_REG_ENDPOINT = "/" + API_VERSION + "/apps/{app_id}/functions"
+# Workload Service
+WORKLOADS_ENDPOINT = f"{API_VERSION_V2}/workloads"
+WORKLOAD_DETAIL_ENDPOINT = f"{API_VERSION_V2}/workloads/{{workload_uid}}"
+WORKLOAD_DEPLOY_ENDPOINT = f"{API_VERSION_V2}/workloads/{{workload_uid}}/deploy"
+WORKLOAD_STATE_ENDPOINT = f"{API_VERSION_V2}/workloads/{{workload_uid}}/state"
+WORKLOAD_EVENTS_ENDPOINT = f"{API_VERSION_V2}/workloads/{{workload_uid}}/events"
 
 # App Service
 CREATE_APP_ENDPOINT = f"{API_VERSION_V2}/apps"
 GET_APP_ENDPOINT = f"{API_VERSION_V2}/apps/{{app_uid}}"
-GET_APP_STATUS_ENDPOINT = f"/{API_VERSION}/apps/{{app_id}}"
 LIST_APPS_ENDPOINT = f"{API_VERSION_V2}/apps"
 DELETE_APP_ENDPOINT = f"{API_VERSION_V2}/apps/{{app_uid}}"
-LIST_FUNCTIONS_ENDPOINT = f"/{API_VERSION}/apps/{{app_id}}/functions"
-GET_FUNCTION_BY_ID_ENDPOINT = f"/{API_VERSION}/functions/{{function_id}}"
-
-# Publish Service
-PUBLISH_ENDPOINT = f"/{API_VERSION}/apps/deploy"
 
 # Logs Service
-LOGS_ENDPOINT = f"/{API_VERSION}/serverless/logs"
+WORKLOAD_LOGS_ENDPOINT = f"{API_VERSION_V2}/workloads/{{workload_uid}}/logs"
