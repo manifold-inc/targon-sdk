@@ -296,26 +296,43 @@ def app_get(ctx, identifier):
 @click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompt")
 @click.pass_context
 def delete_app(ctx, app_ids, yes):
-    """Remove the app/s and all of its deployments."""
+    """Remove apps or individual workloads."""
     client: Client = ctx.obj["client"]
 
     if not app_ids:
-        console.print("[red]✗[/red] At least one app ID is required")
+        console.print("[red]✗[/red] At least one app or workload ID is required")
+        raise SystemExit(1)
+
+    invalid_ids = [
+        resource_id
+        for resource_id in app_ids
+        if not (
+            resource_id.startswith("app-")
+            or resource_id.startswith("wrk-")
+        )
+    ]
+    if invalid_ids:
+        console.print(
+            f"[red]✗[/red] Unsupported identifier(s): {', '.join(invalid_ids)}"
+        )
+        console.print(
+            "[dim]Use [cyan]app-<uid>[/cyan] apps or [cyan]wrk-<uid>[/cyan] for workloads.[/dim]"
+        )
         raise SystemExit(1)
 
     if not yes:
         if len(app_ids) == 1:
             click.confirm(
-                f"Are you sure you want to delete app '{app_ids[0]}' and all its deployments?",
+                f"Are you sure you want to delete '{app_ids[0]}'?",
                 abort=True,
             )
         else:
-            console.print(f"\n[bold]Apps to delete:[/bold]")
-            for app_id in app_ids:
-                console.print(f"  • [bright_cyan]{app_id}[/bright_cyan]")
+            console.print(f"\n[bold]Resources to delete:[/bold]")
+            for resource_id in app_ids:
+                console.print(f"  • [bright_cyan]{resource_id}[/bright_cyan]")
             console.print()
             click.confirm(
-                f"Are you sure you want to delete these {len(app_ids)} apps and all their deployments?",
+                f"Are you sure you want to delete these {len(app_ids)} resources?",
                 abort=True,
             )
 
@@ -327,21 +344,25 @@ def delete_app(ctx, app_ids, yes):
             console=console,
         ) as progress:
             task = progress.add_task(
-                f"[cyan]Deleting {len(app_ids)} apps...[/cyan]", total=len(app_ids)
+                f"[cyan]Deleting {len(app_ids)} resources...[/cyan]", total=len(app_ids)
             )
 
-            # Run parallel deletion using client.run_async
-            async def _delete_apps_parallel():
-                # Create tasks for all deletions
-                tasks = [client.async_app.delete_app(app_id) for app_id in app_ids]
+            async def _delete_resources_parallel():
+                tasks = []
+                for resource_id in app_ids:
+                    if resource_id.startswith("wrk-") or resource_id.startswith("wrk_"):
+                        tasks.append(client.async_functions.delete_function(resource_id))
+                    else:
+                        tasks.append(client.async_app.delete_app(resource_id))
 
-                # Execute in parallel, gathering results/exceptions
-                # We map results back to app_ids by index since gather maintains order
                 responses = await asyncio.gather(*tasks, return_exceptions=True)
 
-                return {app_id: responses[i] for i, app_id in enumerate(app_ids)}
+                return {
+                    resource_id: responses[i]
+                    for i, resource_id in enumerate(app_ids)
+                }
 
-            results = client.run_async(_delete_apps_parallel)
+            results = client.run_async(_delete_resources_parallel)
             progress.update(task, completed=len(app_ids))
 
         # Process and display results
@@ -349,16 +370,16 @@ def delete_app(ctx, app_ids, yes):
         failed = []
 
         console.print()
-        for app_id, result in results.items():
+        for resource_id, result in results.items():
             if isinstance(result, Exception):
-                failed.append((app_id, result))
+                failed.append((resource_id, result))
                 console.print(
-                    f"[red]✗[/red] Failed to delete [bright_cyan]{app_id}[/bright_cyan]: {str(result)}"
+                    f"[red]✗[/red] Failed to delete [bright_cyan]{resource_id}[/bright_cyan]: {str(result)}"
                 )
             else:
-                successful.append(app_id)
+                successful.append(resource_id)
                 console.print(
-                    f"[green]✓[/green] Successfully deleted [bright_cyan]{app_id}[/bright_cyan]"
+                    f"[green]✓[/green] Successfully deleted [bright_cyan]{resource_id}[/bright_cyan]"
                 )
                 # Display optional success details
                 if isinstance(result, dict) and result.get("deleted_resources"):
@@ -373,7 +394,7 @@ def delete_app(ctx, app_ids, yes):
             raise SystemExit(1)
         else:
             console.print(
-                f"[bold green]All {len(successful)} apps deleted successfully.[/bold green]\n"
+                f"[bold green]All {len(successful)} resources deleted successfully.[/bold green]\n"
             )
 
     except (TargonError, APIError) as e:
