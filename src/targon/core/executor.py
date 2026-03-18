@@ -221,6 +221,7 @@ async def deploy_app(
         details_list = [
             f"URL: {running_app.app_page_url}" if running_app.app_page_url else None,
             summary_msg,
+            f"Cost/hr: ${publish_response.total_cost_per_hour:.2f}",
             "",
         ]
 
