@@ -337,11 +337,20 @@ class AsyncAppClient(AsyncBaseHTTPClient):
             updated_at=result.get("updated_at", ""),
         )
         
-    # @TODO
     async def delete_app(self, app_id: str) -> Dict[str, Any]:
         """Delete an app and all corresponding deployments."""
         if not app_id or not app_id.strip():
             raise ValidationError("App ID cannot be empty", field="app_id")
+
+        functions_response = await self.list_functions(app_id)
+        function_uids = [fn.uid for fn in functions_response.functions if fn.uid]
+        if function_uids:
+            await asyncio.gather(
+                *(
+                    self.client.async_functions.delete_function(function_uid)
+                    for function_uid in function_uids
+                )
+            )
 
         endpoint = DELETE_APP_ENDPOINT.format(app_uid=app_id)
         result = await self._async_delete(endpoint)
