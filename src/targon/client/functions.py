@@ -69,7 +69,7 @@ class ServerlessWebhookConfig:
 
 @dataclass
 class CreateWorkloadServerlessConfig:
-    definition_type: str
+    definition_type: Optional[str] = ""
     module: str = ""
     qualname: str = ""
     function_serialized: str = ""
