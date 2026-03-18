@@ -10,13 +10,15 @@ console = Console(stderr=True)
 @click.command()
 @click.argument("uid", required=True)
 @click.option(
-    "--follow/--no-follow",
-    default=True,
-    help="Follow logs in real-time (default: True)",
+    "--follow",
+    "-f",
+    is_flag=True,
+    default=False,
+    help="Follow logs in real-time.",
 )
 @click.pass_context
 def logs(ctx, uid, follow):
-    """Stream logs from a serverless deployments."""
+    """Read logs from a workload."""
     client: Client = ctx.obj["client"]
 
     async def _stream_logs(c: Client):
@@ -33,11 +35,11 @@ def logs(ctx, uid, follow):
     try:
         if follow:
             console.print(
-                f"[dim]Streaming logs for deployment [bright_cyan]{uid}[/bright_cyan]... (Ctrl+C to stop)[/dim]\n"
+                f"[dim]Streaming logs for workload [bright_cyan]{uid}[/bright_cyan]... (Ctrl+C to stop)[/dim]\n"
             )
         else:
             console.print(
-                f"[dim]Fetching logs for deployment [bright_cyan]{uid}[/bright_cyan]...[/dim]\n"
+                f"[dim]Fetching logs for workload [bright_cyan]{uid}[/bright_cyan]...[/dim]\n"
             )
 
         asyncio.run(_stream_logs(client))
@@ -48,22 +50,22 @@ def logs(ctx, uid, follow):
         console.print(f"\n[red]✗[/red] [bold]API Error:[/bold] {e.message}\n")
         if e.is_not_found:
             console.print(
-                f"[dim]Hint: deployment '{uid}' may not exist or may not be deployed yet.[/dim]"
+                f"[dim]Hint: workload '{uid}' may not exist or may not be deployed yet.[/dim]"
             )
         else:
             console.print(
-                f"[dim]Hint: Try checking the deployment state with [cyan]targon app get {uid}[/cyan][/dim]"
+                f"[dim]Hint: Try checking the workload state with [cyan]targon app get {uid}[/cyan][/dim]"
             )
         raise SystemExit(1)
     except TargonError as e:
         console.print(f"\n[red]✗[/red] [bold]Error:[/bold] {e.message}\n")
         console.print(
-            f"[dim]Hint: Try checking the deployment state with [cyan]targon app get {uid}[/cyan][/dim]"
+            f"[dim]Hint: Try checking the workload state with [cyan]targon app get {uid}[/cyan][/dim]"
         )
         raise SystemExit(1)
     except Exception as e:
         console.print(f"\n[red]✗[/red] [bold]Unexpected error:[/bold] {e}\n")
         console.print(
-            f"[dim]Hint: Try checking the deployment state with [cyan]targon app get {uid}[/cyan][/dim]"
+            f"[dim]Hint: Try checking the workload state with [cyan]targon app get {uid}[/cyan][/dim]"
         )
         raise SystemExit(1)
