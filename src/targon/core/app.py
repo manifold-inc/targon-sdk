@@ -62,7 +62,7 @@ class _App(BaseApp):
         resource: str = Compute.CPU_SMALL,
         min_replicas: int = 1,
         max_replicas: int = 3,
-        initial_replicas: int = 0,
+        initial_replicas: int = 1,
         max_concurrency: int | None = None,
         target_concurrency: int | None = None,
         scale_up_delay: str | None = None,
