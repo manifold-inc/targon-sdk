@@ -127,6 +127,7 @@ def completion(shell: str):
 # Register commands
 cli.add_command(setup)
 cli.add_command(capacity)
+cli.add_command(capacity, name="inventory")
 cli.add_command(deploy, name="deploy")
 cli.add_command(run, name="run")
 cli.add_command(app, name="app")

@@ -32,6 +32,11 @@ def capacity(ctx, gpu, json):
             click.echo(js.dumps([asdict(item) for item in inventory], indent=2))
             return
 
+        _rich_console.print(
+            "[dim]Note: `targon capacity` will move to `targon inventory`. "
+            "Both commands are supported for now.[/dim]"
+        )
+
         table = Table(
             title="[bold bright_cyan]Inventory[/bold bright_cyan]",
             border_style="dim bright_black",
