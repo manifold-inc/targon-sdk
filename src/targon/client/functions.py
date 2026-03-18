@@ -216,11 +216,19 @@ def _build_function_response(
         else:
             web_url = primary_url
 
+    resolved_name = payload.get("name")
+    if not isinstance(resolved_name, str) or not resolved_name.strip():
+        resolved_name = name
+
+    resolved_app_id = payload.get("app_id")
+    if not isinstance(resolved_app_id, str) or not resolved_app_id.strip():
+        resolved_app_id = app_id
+
     return FunctionResponse(
         uid=uid,
         metadata=FunctionMetadata(
-            name=payload.get("name", name),
-            app_id=payload.get("app_id", app_id),
+            name=resolved_name,
+            app_id=resolved_app_id,
             created=created,
             revision=payload.get("revision", ""),
             web_url=web_url,
