@@ -103,14 +103,17 @@ async def _check_function_deployment_status(
     while True:
         elapsed_time = time.time() - start_time
 
-        status_response = await client.async_app.get_app_status(
+        functions_response = await client.async_app.list_functions(
             app_id=running_app.app_id
         )
 
         non_deployed = [
-            (func_name, func_status.status)
-            for func_name, func_status in status_response.functions.items()
-            if func_status.status != "deployed"
+            (
+                func.name or func.uid,
+                func.state.status if func.state else "unknown",
+            )
+            for func in functions_response.functions
+            if not func.state or func.state.status.lower() not in {"running", "deployed"}
         ]
 
         if not non_deployed:
@@ -307,7 +310,7 @@ async def run_app(
     else:
         if console_instance:
             console_instance.info(
-                f"View status: targon app status {running_app.app_id}"
+                f"View status: targon app get {running_app.app_id}"
             )
         sys.exit(1)
 
