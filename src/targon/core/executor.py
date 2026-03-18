@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import AsyncGenerator, Dict, Optional
 
 from targon.client.publish import PublishResponse
-from targon.client.app import AppResponse, AppStatusResponse
+from targon.client.app import AppResponse
 from targon.client.client import Client
 from targon.core.console import Console
 from targon.core.objects import BaseApp, _Object
@@ -34,16 +34,13 @@ async def _init_local_app_from_name(
     name: str,
     project_name: str = "default",
 ) -> RunningApp:
+    app_resp: AppResponse = await client.async_app.create_app(name=name)
 
-    app_resp: AppResponse = await client.async_app.get_app(
-        name=name,
-        project_name=project_name,
-    )
     return RunningApp(
-        app_id=app_resp.AppID,
-        app_name=app_resp.Name,
-        project_name=app_resp.ProjectName,
-        app_page_url=app_resp.WebURL,
+        app_id=app_resp.uid,
+        app_name=app_resp.name,
+        project_name=project_name,
+        app_page_url=None,
     )
 
 
@@ -106,7 +103,7 @@ async def _check_function_deployment_status(
     while True:
         elapsed_time = time.time() - start_time
 
-        status_response: AppStatusResponse = await client.async_app.get_app_status(
+        status_response = await client.async_app.get_app_status(
             app_id=running_app.app_id
         )
 
