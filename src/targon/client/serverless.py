@@ -6,6 +6,8 @@ from targon.client.constants import (
     WORKLOADS_ENDPOINT,
     WORKLOAD_DETAIL_ENDPOINT,
     WORKLOAD_DEPLOY_ENDPOINT,
+    WORKLOAD_EVENTS_ENDPOINT,
+    WORKLOAD_STATE_ENDPOINT,
 )
 from targon.core.exceptions import HydrationError, ValidationError
 from targon.core.objects import AsyncBaseHTTPClient
@@ -244,6 +246,133 @@ class CreateServerlessResponse:
 
 
 @dataclass(slots=True)
+class WorkloadURL:
+    port: int
+    url: str
+
+
+@dataclass(slots=True)
+class WorkloadStateResponse:
+    uid: str
+    workload_type: str
+    status: str
+    message: str
+    urls: List[WorkloadURL] = field(default_factory=list)
+    ready_replicas: int = 0
+    total_replicas: int = 0
+    updated_at: str = ""
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "WorkloadStateResponse":
+        if not isinstance(data, dict):
+            raise HydrationError(
+                f"Expected dict for WorkloadStateResponse, got {type(data).__name__}",
+                object_type="WorkloadStateResponse",
+            )
+
+        uid = data.get("uid")
+        if not uid:
+            raise HydrationError(
+                "Missing uid in WorkloadStateResponse response",
+                object_type="WorkloadStateResponse",
+            )
+
+        urls_raw = data.get("urls", [])
+        if urls_raw is None:
+            urls_raw = []
+        if not isinstance(urls_raw, list):
+            raise HydrationError(
+                f"Expected list for WorkloadStateResponse.urls, got {type(urls_raw).__name__}",
+                object_type="WorkloadStateResponse",
+            )
+
+        urls = [
+            WorkloadURL(port=item.get("port", 0), url=item.get("url", ""))
+            for item in urls_raw
+            if isinstance(item, dict)
+        ]
+
+        return cls(
+            uid=uid,
+            workload_type=data.get("workload_type", ""),
+            status=data.get("status", ""),
+            message=data.get("message", ""),
+            urls=urls,
+            ready_replicas=data.get("ready_replicas", 0),
+            total_replicas=data.get("total_replicas", 0),
+            updated_at=data.get("updated_at", ""),
+        )
+
+
+@dataclass(slots=True)
+class WorkloadEvent:
+    workload_uid: str
+    workload_type: str
+    resource_name: Optional[str] = None
+    event_type: str = ""
+    pod_name: Optional[str] = None
+    container_name: Optional[str] = None
+    container_image: Optional[str] = None
+    new_status: Optional[str] = None
+    replica_count: Optional[int] = None
+    old_replica_count: Optional[int] = None
+    reason: Optional[str] = None
+    message: Optional[str] = None
+    display_message: Optional[str] = None
+    exit_code: Optional[int] = None
+    created_at: str = ""
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "WorkloadEvent":
+        if not isinstance(data, dict):
+            raise HydrationError(
+                f"Expected dict for WorkloadEvent, got {type(data).__name__}",
+                object_type="WorkloadEvent",
+            )
+        return cls(
+            workload_uid=data.get("workload_uid", ""),
+            workload_type=data.get("workload_type", ""),
+            resource_name=data.get("resource_name"),
+            event_type=data.get("event_type", ""),
+            pod_name=data.get("pod_name"),
+            container_name=data.get("container_name"),
+            container_image=data.get("container_image"),
+            new_status=data.get("new_status"),
+            replica_count=data.get("replica_count"),
+            old_replica_count=data.get("old_replica_count"),
+            reason=data.get("reason"),
+            message=data.get("message"),
+            display_message=data.get("display_message"),
+            exit_code=data.get("exit_code"),
+            created_at=data.get("created_at", ""),
+        )
+
+
+@dataclass(slots=True)
+class WorkloadEventsResponse:
+    items: List[WorkloadEvent] = field(default_factory=list)
+    next_cursor: Optional[str] = None
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "WorkloadEventsResponse":
+        if not isinstance(data, dict):
+            raise HydrationError(
+                f"Expected dict for WorkloadEventsResponse, got {type(data).__name__}",
+                object_type="WorkloadEventsResponse",
+            )
+        items_raw = data.get("items", [])
+        if not isinstance(items_raw, list):
+            raise HydrationError(
+                f"Expected list for WorkloadEventsResponse.items, got {type(items_raw).__name__}",
+                object_type="WorkloadEventsResponse",
+            )
+        return cls(
+            items=[WorkloadEvent.from_dict(item) for item in items_raw],
+            next_cursor=data.get("next_cursor"),
+        )
+
+
+@dataclass(slots=True)
 class ServerlessResourceListItem:
     uid: str
     name: Optional[str] = None
@@ -435,3 +564,29 @@ class AsyncServerlessClient(AsyncBaseHTTPClient):
                 object_type="ServerlessDeleteResponse",
             )
         return result or {}
+
+    async def get_state(self, workload_uid: str) -> WorkloadStateResponse:
+        workload_uid = _validate_non_empty(workload_uid, "workload_uid")
+        result = await self._async_get(
+            WORKLOAD_STATE_ENDPOINT.format(workload_uid=workload_uid)
+        )
+        return WorkloadStateResponse.from_dict(result)
+
+    async def get_events(
+        self,
+        workload_uid: str,
+        *,
+        limit: Optional[int] = None,
+        cursor: Optional[str] = None,
+    ) -> WorkloadEventsResponse:
+        workload_uid = _validate_non_empty(workload_uid, "workload_uid")
+        params: Dict[str, Any] = {}
+        if limit is not None:
+            params["limit"] = limit
+        if cursor:
+            params["cursor"] = cursor
+        result = await self._async_get(
+            WORKLOAD_EVENTS_ENDPOINT.format(workload_uid=workload_uid),
+            params=params or None,
+        )
+        return WorkloadEventsResponse.from_dict(result)
