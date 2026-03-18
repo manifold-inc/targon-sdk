@@ -379,9 +379,14 @@ async def deploy_config(
             container_name = (
                 requests[idx].name if idx < len(requests) else f"container-{idx}"
             )
-            details_list.append(
-                f"  • {container_name}: https://{resource.uid}.serverless.targon.com"
-            )
+            resource_line = f"  • {container_name}: {resource.url or resource.uid}"
+            if resource.cost_per_hour is not None:
+                resource_line += f" [${resource.cost_per_hour:.2f}/hr]"
+            if resource.status:
+                resource_line += f" [{resource.status}]"
+            details_list.append(resource_line)
+            if resource.message:
+                details_list.append(f"    {resource.message}")
 
         details_list.append("")
 

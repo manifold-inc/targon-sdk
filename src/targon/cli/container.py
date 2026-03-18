@@ -51,6 +51,9 @@ def list_containers(
                 lambda: client.async_serverless.list_container()
             )
 
+        if uid:
+            resources = [resource for resource in resources if resource.uid == uid]
+
         # Display results in a table
         if not resources:
             console.print(
@@ -83,9 +86,10 @@ def list_containers(
         table.add_column("URL", style="blue")
         table.add_column("COST", justify="right", style="yellow")
         table.add_column("CREATED", style="green")
-        total_cost = 0
+        total_cost = 0.0
         for resource in resources:
-            total_cost += resource.cost
+            if resource.cost is not None:
+                total_cost += resource.cost
             table.add_row(
                 resource.name or "—",
                 resource.uid,
