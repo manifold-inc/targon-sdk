@@ -66,5 +66,4 @@ class Config:
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
             "Accept": "application/json",
-            "X-Deployment-Type": "master",
         }

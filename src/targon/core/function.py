@@ -207,13 +207,13 @@ class _Invocation:
         )
 
 
-class _Function(_Object, type_prefix="fnc"):
+class _Function(_Object, type_prefix="wrk"):
     """Functions are the basic units of serverless execution on Targon."""
 
     # Function metadata
     _web_url: str | None = None
     _grpc_endpoint: Union[Tuple[str, int], str] | None = None
-    _revision: int | None = None
+    _revision: str | None = None
     _webhook_config: WebhookConfig | None = None
     _raw_f: Callable | None = None
     # App/Object context
@@ -262,7 +262,7 @@ class _Function(_Object, type_prefix="fnc"):
         resource_name: str = Compute.CPU_SMALL,
         min_replicas: int = 1,
         max_replicas: int = 3,
-        initial_replicas: int = 0,
+        initial_replicas: int = 1,
         max_concurrency: int | None = None,
         target_concurrency: int | None = None,
         scale_up_delay: str | None = None,

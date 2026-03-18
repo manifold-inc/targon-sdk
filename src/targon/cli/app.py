@@ -82,28 +82,21 @@ def list_apps(ctx):
             detailed_app = detailed_apps[i]
             app_label = Text()
             app_label.append(app_item.name, style="bold bright_cyan")
-            app_label.append(f" ({app_item.app_id})", style="dim")
+            app_label.append(f" ({app_item.uid})", style="dim")
 
             app_node = tree.add(app_label)
 
             if detailed_app and detailed_app.functions:
-                for func_id, func_data in detailed_app.functions.items():
+                for fn in detailed_app.functions:
                     status_text = (
-                        get_status_display(func_data.status)
-                        if func_data.status
-                        else "[dim]● Unknown[/dim]"
+                        get_status_display(fn.state.status)
+                        if fn.state
+                        else "[dim]● unknown[/dim]"
                     )
-
                     func_label = Text.from_markup(
-                        f"[bold]{func_data.name}[/bold] {status_text} [dim]({func_data.uid})[/dim]"
+                        f"[bold]{fn.name}[/bold] {status_text} [dim]({fn.uid})[/dim]"
                     )
-                    func_node = app_node.add(func_label)
-
-                    if func_data.url:
-                        func_node.add(
-                            f"[dim]URL:[/dim] [bright_blue underline]{func_data.url}[/bright_blue underline]"
-                        )
-
+                    app_node.add(func_label)
             else:
                 app_node.add("[dim italic]No functions deployed[/dim italic]")
 
@@ -126,127 +119,128 @@ def _display_function_details(response: Any):
     grid.add_column()
 
     # Basic Info
-    grid.add_row("Function UID:", f"[bright_cyan]{response.uid}[/bright_cyan]")
-    grid.add_row("App ID:", f"[bright_blue]{response.app_id}[/bright_blue]")
-    if response.status:
-        grid.add_row("Status:", get_status_display(response.status))
+    grid.add_row("Workload UID:", f"[bright_cyan]{response.uid}[/bright_cyan]")
+    grid.add_row("App ID:", f"[bright_blue]{response.app_id or '[dim]-[/dim]'}[/bright_blue]")
+    grid.add_row("Name:", response.name)
+    grid.add_row("Image:", response.image or "[dim]-[/dim]")
+    grid.add_row("Resource:", response.resource_name or "[dim]-[/dim]")
 
-    grid.add_row("Module:", str(response.module or "[dim]-[/dim]"))
-    grid.add_row("Qualname:", str(response.qualname or "[dim]-[/dim]"))
-    grid.add_row("Image ID:", str(response.image_id or "[dim]-[/dim]"))
-    grid.add_row("Resource:", str(response.resource_name or "[dim]-[/dim]"))
-    grid.add_row(
-        "URL:",
-        (
-            f"[bright_blue underline]{response.url}[/bright_blue underline]"
-            if response.url
-            else "[dim]-[/dim]"
-        ),
-    )
+    if response.cost_per_hour is not None:
+        grid.add_row("Cost/hr:", f"${response.cost_per_hour:.4f}")
+
+    if response.resource:
+        grid.add_row("", "")
+        grid.add_row("[bold bright_cyan]Resource[/bold bright_cyan]", "")
+        grid.add_row("Display Name:", response.resource.display_name)
+        grid.add_row("vCPU:", str(response.resource.vcpu))
+        grid.add_row("Memory:", f"{response.resource.memory} MB")
+        if response.resource.gpu_type:
+            grid.add_row("GPU Type:", response.resource.gpu_type)
+        if response.resource.gpu_count:
+            grid.add_row("GPU Count:", str(response.resource.gpu_count))
+
+    if response.state:
+        grid.add_row("", "")
+        grid.add_row("[bold bright_cyan]State[/bold bright_cyan]", "")
+        grid.add_row("Status:", get_status_display(response.state.status))
+        grid.add_row("Message:", response.state.message or "[dim]-[/dim]")
+        grid.add_row("Ready Replicas:", str(response.state.ready_replicas))
+        grid.add_row("Total Replicas:", str(response.state.total_replicas))
+
+    if response.serverless_config:
+        sc = response.serverless_config
+        grid.add_row("", "")
+        grid.add_row("[bold bright_cyan]Serverless Config[/bold bright_cyan]", "")
+        if sc.module:
+            grid.add_row("Module:", sc.module)
+        if sc.qualname:
+            grid.add_row("Qualname:", sc.qualname)
+        if sc.definition_type:
+            grid.add_row("Definition Type:", sc.definition_type)
+        if sc.min_replicas is not None:
+            grid.add_row("Min Replicas:", str(sc.min_replicas))
+        if sc.max_replicas is not None:
+            grid.add_row("Max Replicas:", str(sc.max_replicas))
+        if sc.container_concurrency is not None:
+            grid.add_row("Container Concurrency:", str(sc.container_concurrency))
+        if sc.target_concurrency is not None:
+            grid.add_row("Target Concurrency:", str(sc.target_concurrency))
+        if sc.timeout_seconds is not None:
+            grid.add_row("Timeout:", f"{sc.timeout_seconds}s")
+        if sc.startup_timeout is not None:
+            grid.add_row("Startup Timeout:", f"{sc.startup_timeout}s")
+
+    grid.add_row("", "")
     grid.add_row("Created:", format_timestamp(response.created_at))
     grid.add_row("Updated:", format_timestamp(response.updated_at))
-
-    # Timeouts
-    if response.timeout_secs is not None or response.startup_timeout is not None:
-        grid.add_row("", "")  # Spacer
-        grid.add_row("[bold bright_cyan]Timeouts[/bold bright_cyan]", "")
-        if response.timeout_secs is not None:
-            grid.add_row("Execution:", f"{response.timeout_secs}s")
-        if response.startup_timeout is not None:
-            grid.add_row("Startup:", f"{response.startup_timeout}s")
-
-    # Webhook Config
-    if response.webhook_config:
-        grid.add_row("", "")  # Spacer
-        grid.add_row("[bold bright_cyan]Webhook Configuration[/bold bright_cyan]", "")
-        grid.add_row("Type:", str(response.webhook_config.type))
-        grid.add_row("Method:", str(response.webhook_config.method))
-        grid.add_row("Auth Required:", str(response.webhook_config.requires_auth))
-        if response.webhook_config.port:
-            grid.add_row("Port:", str(response.webhook_config.port))
-        if response.webhook_config.label:
-            grid.add_row("Label:", str(response.webhook_config.label))
-        grid.add_row("Docs:", str(response.webhook_config.docs))
-
-    # Autoscaler Settings
-    if response.autoscaler_settings:
-        grid.add_row("", "")  # Spacer
-        grid.add_row("[bold bright_cyan]Autoscaler Settings[/bold bright_cyan]", "")
-        grid.add_row("Min Replicas:", str(response.autoscaler_settings.min_replicas))
-        grid.add_row("Max Replicas:", str(response.autoscaler_settings.max_replicas))
-
-        if response.autoscaler_settings.container_concurrency is not None:
-            grid.add_row(
-                "Container Concurrency:",
-                str(response.autoscaler_settings.container_concurrency),
-            )
-        if response.autoscaler_settings.target_concurrency is not None:
-            grid.add_row(
-                "Target Concurrency:",
-                str(response.autoscaler_settings.target_concurrency),
-            )
-        if response.autoscaler_settings.scaling_metric:
-            grid.add_row(
-                "Scaling Metric:", str(response.autoscaler_settings.scaling_metric)
-            )
-        if response.autoscaler_settings.target_value is not None:
-            grid.add_row(
-                "Target Value:", str(response.autoscaler_settings.target_value)
-            )
 
     console.print()
     console.print(grid)
     console.print("[bold]Tips[/bold]")
     console.print(f"  • View logs: [cyan]targon logs {response.uid}[/cyan]")
-    console.print(f"  • View app:  [cyan]targon app get {response.app_id}[/cyan]")
+    if response.app_id:
+        console.print(f"  • View app:  [cyan]targon app get {response.app_id}[/cyan]")
     console.print()
 
 
-def _display_app_details(response: Any):
-    """Helper to display app details."""
+def _display_list_function_details(response: Any):
+    """Helper to display list functions (workloads) for an app."""
     grid = Table.grid(padding=(0, 2))
     grid.add_column(style="bold dim", justify="right")
     grid.add_column()
 
     grid.add_row("App ID:", f"[bright_cyan]{response.app_id}[/bright_cyan]")
-    grid.add_row("Project ID:", str(response.project_id or "[dim]-[/dim]"))
-    grid.add_row("Project Name:", str(response.project_name or "[dim]-[/dim]"))
-    grid.add_row("Function Count:", str(response.function_count))
-    grid.add_row("Created:", format_timestamp(response.created_at))
-    grid.add_row("Updated:", format_timestamp(response.updated_at))
+    grid.add_row("App Name:", response.app_name or "[dim]-[/dim]")
+    grid.add_row("Function Count:", str(response.total))
 
     console.print()
     console.print(grid)
 
-    # Display functions if any exist
-    if response.functions:
-        table = Table(
-            title=f"[bold bright_cyan]Functions[/bold bright_cyan] [dim]({response.function_count} total)[/dim]",
-            border_style="dim bright_black",
-            header_style="bold bright_cyan",
-            show_lines=False,
-            box=None,
-            pad_edge=False,
-            collapse_padding=True,
+    if not response.functions:
+        console.print("\n[dim italic]No functions deployed in this app.[/dim italic]\n")
+        return
+
+    table = Table(
+        title=f"[bold bright_cyan]Functions[/bold bright_cyan] [dim]({response.total} total)[/dim]",
+        border_style="dim bright_black",
+        header_style="bold bright_cyan",
+        show_lines=False,
+        box=None,
+        pad_edge=False,
+        collapse_padding=True,
+    )
+    table.add_column("UID", style="bright_cyan", no_wrap=True)
+    table.add_column("Name", style="bold")
+    table.add_column("Image", style="dim", no_wrap=True)
+    table.add_column("Status", style="")
+    table.add_column("Message", style="dim")
+    table.add_column("Ready", style="dim", justify="right")
+    table.add_column("Created", style="dim")
+
+    for fn in response.functions:
+        status_text = (
+            get_status_display(fn.state.status) if fn.state else "[dim]● unknown[/dim]"
         )
-        table.add_column("UID", style="bright_cyan", no_wrap=True)
-        table.add_column("Name", style="bold")
-        table.add_column("Status", style="")
-        table.add_column("URL", style="bright_blue underline")
+        message = fn.state.message if fn.state else "[dim]-[/dim]"
+        replicas = (
+            f"{fn.state.ready_replicas}/{fn.state.total_replicas}" if fn.state else "[dim]-[/dim]"
+        )
+        table.add_row(
+            fn.uid,
+            fn.name,
+            fn.image or "[dim]-[/dim]",
+            status_text,
+            message,
+            replicas,
+            format_timestamp(fn.created_at),
+        )
 
-        for func_id, func_data in response.functions.items():
-            table.add_row(
-                func_data.uid,
-                func_data.name,
-                get_status_display(func_data.status),
-                func_data.url or "[dim]-[/dim]",
-            )
+    console.print()
+    console.print(table)
+    console.print(
+        f"\n  [dim]Run [cyan]targon app get <wrk-uid>[/cyan] for full workload details.[/dim]\n"
+    )
 
-        console.print()
-        console.print(table)
-        console.print()
-    else:
-        console.print("\n[dim italic]No functions deployed in this app.[/dim italic]")
 
 @app.command("get")
 @click.argument("identifier", required=True)
@@ -256,10 +250,10 @@ def app_get(ctx, identifier):
     client: Client = ctx.obj["client"]
 
     try:
-        if identifier.startswith("fnc-"):
-            # Handle function details
+        if identifier.startswith("wrk-"):
+            # Handle function/workload details
             with console.status(
-                "[bold cyan]Fetching function details...[/bold cyan]", spinner="dots"
+                "[bold cyan]Fetching workload details...[/bold cyan]", spinner="dots"
             ):
                 response = client.run_async(
                     lambda: client.async_app.get_function(identifier)
@@ -267,20 +261,20 @@ def app_get(ctx, identifier):
 
             _display_function_details(response)
 
-        elif identifier.startswith("app-"):
-            # Handle app status
+        elif identifier.startswith("app-") or identifier.startswith("app_"):
+            # Handle app details + function workloads
             with console.status(
-                "[bold cyan]Fetching app details...[/bold cyan]", spinner="dots"
+                "[bold cyan]Fetching app + function workloads...[/bold cyan]", spinner="dots"
             ):
                 response = client.run_async(
-                    lambda: client.async_app.get_app_status(identifier)
+                    lambda: client.async_app.list_functions(identifier)
                 )
 
-            _display_app_details(response)
+            _display_list_function_details(response)
 
         else:
             console.print(
-                "[yellow]⚠[/yellow] Use [cyan]'targon app get <fnc-xxx> or <app-xxx>'[/cyan]."
+                "[yellow]⚠[/yellow] Use [cyan]'targon app get <wrk-xxx> or <app-xxx>'[/cyan]."
             )
 
     except APIError as e:
@@ -302,26 +296,43 @@ def app_get(ctx, identifier):
 @click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompt")
 @click.pass_context
 def delete_app(ctx, app_ids, yes):
-    """Remove the app/s and all of its deployments."""
+    """Remove apps or individual workloads."""
     client: Client = ctx.obj["client"]
 
     if not app_ids:
-        console.print("[red]✗[/red] At least one app ID is required")
+        console.print("[red]✗[/red] At least one app or workload ID is required")
+        raise SystemExit(1)
+
+    invalid_ids = [
+        resource_id
+        for resource_id in app_ids
+        if not (
+            resource_id.startswith("app-")
+            or resource_id.startswith("wrk-")
+        )
+    ]
+    if invalid_ids:
+        console.print(
+            f"[red]✗[/red] Unsupported identifier(s): {', '.join(invalid_ids)}"
+        )
+        console.print(
+            "[dim]Use [cyan]app-<uid>[/cyan] apps or [cyan]wrk-<uid>[/cyan] for workloads.[/dim]"
+        )
         raise SystemExit(1)
 
     if not yes:
         if len(app_ids) == 1:
             click.confirm(
-                f"Are you sure you want to delete app '{app_ids[0]}' and all its deployments?",
+                f"Are you sure you want to delete '{app_ids[0]}'?",
                 abort=True,
             )
         else:
-            console.print(f"\n[bold]Apps to delete:[/bold]")
-            for app_id in app_ids:
-                console.print(f"  • [bright_cyan]{app_id}[/bright_cyan]")
+            console.print(f"\n[bold]Resources to delete:[/bold]")
+            for resource_id in app_ids:
+                console.print(f"  • [bright_cyan]{resource_id}[/bright_cyan]")
             console.print()
             click.confirm(
-                f"Are you sure you want to delete these {len(app_ids)} apps and all their deployments?",
+                f"Are you sure you want to delete these {len(app_ids)} resources?",
                 abort=True,
             )
 
@@ -333,21 +344,25 @@ def delete_app(ctx, app_ids, yes):
             console=console,
         ) as progress:
             task = progress.add_task(
-                f"[cyan]Deleting {len(app_ids)} apps...[/cyan]", total=len(app_ids)
+                f"[cyan]Deleting {len(app_ids)} resources...[/cyan]", total=len(app_ids)
             )
 
-            # Run parallel deletion using client.run_async
-            async def _delete_apps_parallel():
-                # Create tasks for all deletions
-                tasks = [client.async_app.delete_app(app_id) for app_id in app_ids]
+            async def _delete_resources_parallel():
+                tasks = []
+                for resource_id in app_ids:
+                    if resource_id.startswith("wrk-") or resource_id.startswith("wrk_"):
+                        tasks.append(client.async_functions.delete_function(resource_id))
+                    else:
+                        tasks.append(client.async_app.delete_app(resource_id))
 
-                # Execute in parallel, gathering results/exceptions
-                # We map results back to app_ids by index since gather maintains order
                 responses = await asyncio.gather(*tasks, return_exceptions=True)
 
-                return {app_id: responses[i] for i, app_id in enumerate(app_ids)}
+                return {
+                    resource_id: responses[i]
+                    for i, resource_id in enumerate(app_ids)
+                }
 
-            results = client.run_async(_delete_apps_parallel)
+            results = client.run_async(_delete_resources_parallel)
             progress.update(task, completed=len(app_ids))
 
         # Process and display results
@@ -355,16 +370,16 @@ def delete_app(ctx, app_ids, yes):
         failed = []
 
         console.print()
-        for app_id, result in results.items():
+        for resource_id, result in results.items():
             if isinstance(result, Exception):
-                failed.append((app_id, result))
+                failed.append((resource_id, result))
                 console.print(
-                    f"[red]✗[/red] Failed to delete [bright_cyan]{app_id}[/bright_cyan]: {str(result)}"
+                    f"[red]✗[/red] Failed to delete [bright_cyan]{resource_id}[/bright_cyan]: {str(result)}"
                 )
             else:
-                successful.append(app_id)
+                successful.append(resource_id)
                 console.print(
-                    f"[green]✓[/green] Successfully deleted [bright_cyan]{app_id}[/bright_cyan]"
+                    f"[green]✓[/green] Successfully deleted [bright_cyan]{resource_id}[/bright_cyan]"
                 )
                 # Display optional success details
                 if isinstance(result, dict) and result.get("deleted_resources"):
@@ -379,7 +394,7 @@ def delete_app(ctx, app_ids, yes):
             raise SystemExit(1)
         else:
             console.print(
-                f"[bold green]All {len(successful)} apps deleted successfully.[/bold green]\n"
+                f"[bold green]All {len(successful)} resources deleted successfully.[/bold green]\n"
             )
 
     except (TargonError, APIError) as e:

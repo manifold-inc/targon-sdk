@@ -4,16 +4,12 @@ import asyncio
 
 from targon.core.objects import AsyncBaseHTTPClient
 from targon.core.exceptions import TargonError, ValidationError
-from targon.core.partial_function import WebhookConfig
-from targon.client.functions import AutoscalerSettings
 from targon.client.constants import (
     DEFAULT_BASE_URL,
+    CREATE_APP_ENDPOINT,
     GET_APP_ENDPOINT,
-    GET_APP_STATUS_ENDPOINT,
     LIST_APPS_ENDPOINT,
     DELETE_APP_ENDPOINT,
-    LIST_FUNCTIONS_ENDPOINT,
-    GET_FUNCTION_BY_ID_ENDPOINT,
 )
 
 
@@ -25,12 +21,11 @@ class AppRequest:
 
 @dataclass(slots=True)
 class AppResponse:
-    AppID: str
-    Name: str
-    ProjectID: str
-    ProjectName: str
-    Created: bool
-    WebURL: str
+    uid: str
+    project_id: Optional[str]
+    name: str
+    created_at: str = ""
+    updated_at: str = ""
 
 
 @dataclass(slots=True)
@@ -42,7 +37,7 @@ class FunctionStatus:
 
 
 @dataclass(slots=True)
-class AppStatusResponse:
+class FunctionResponse:
     app_id: str
     name: str
     project_id: str
@@ -55,9 +50,9 @@ class AppStatusResponse:
 
 @dataclass(slots=True)
 class AppListItem:
-    app_id: str
+    uid: str
     name: str
-    project_id: str
+    project_id: Optional[str]
     created_at: str
     updated_at: str
 
@@ -69,12 +64,31 @@ class ListAppsResponse:
 
 
 @dataclass(slots=True)
+class WorkloadState:
+    status: str
+    message: str
+    ready_replicas: int
+    total_replicas: int
+
+
+@dataclass(slots=True)
+class WorkloadResource:
+    name: str
+    display_name: str
+    gpu_type: Optional[str]
+    gpu_count: Optional[int]
+    vcpu: int
+    memory: int
+
+
+@dataclass(slots=True)
 class FunctionItem:
     uid: str
     name: str
-    module: Optional[str]
-    qualname: Optional[str]
-    image_id: Optional[str]
+    image: str
+    cost_per_hour: Optional[float]
+    resource: Optional[WorkloadResource]
+    state: Optional[WorkloadState]
     created_at: str
     updated_at: str
 
@@ -82,25 +96,37 @@ class FunctionItem:
 @dataclass(slots=True)
 class ListFunctionsResponse:
     app_id: str
+    app_name: str
     functions: List[FunctionItem]
     total: int
 
 
 @dataclass(slots=True)
-class FunctionDetailResponse:
-    uid: str
-    app_id: str
-    name: str
+class ServerlessConfig:
     module: Optional[str]
     qualname: Optional[str]
-    image_id: Optional[str]
-    resource_name: Optional[str]
-    webhook_config: Optional[WebhookConfig]
-    autoscaler_settings: Optional[AutoscalerSettings]
-    timeout_secs: Optional[int]
+    definition_type: Optional[str]
+    min_replicas: Optional[int]
+    max_replicas: Optional[int]
+    initial_replicas: Optional[int]
+    container_concurrency: Optional[int]
+    target_concurrency: Optional[int]
+    timeout_seconds: Optional[int]
     startup_timeout: Optional[int]
-    url: str
-    status: Optional[str]
+    webhook_config: Optional[Dict[str, Any]]
+
+
+@dataclass(slots=True)
+class FunctionDetailResponse:
+    uid: str
+    app_id: Optional[str]
+    name: str
+    image: str
+    resource_name: str
+    cost_per_hour: Optional[float]
+    resource: Optional[WorkloadResource]
+    serverless_config: Optional[ServerlessConfig]
+    state: Optional[WorkloadState]
     created_at: str
     updated_at: str
 
@@ -112,195 +138,239 @@ class AsyncAppClient(AsyncBaseHTTPClient):
         super().__init__(client)
         self.base_url = DEFAULT_BASE_URL
 
-    async def get_app(self, name: str, project_name: str = "default") -> AppResponse:
-        if not name or not name.strip():
-            raise ValidationError("App name cannot be empty", field="name")
-
-        if not project_name or not project_name.strip():
-            raise ValidationError("Project name cannot be empty", field="project_name")
-
-        payload: Dict[str, str] = {"name": name, "project_name": project_name}
-
-        result = await self._async_post(GET_APP_ENDPOINT, json=payload)
-        if not isinstance(result, dict):
-            raise TargonError(f"Unexpected response format: {type(result).__name__}")
-
-        return AppResponse(
-            AppID=result.get("app_id", ""),
-            Name=result.get("name", name),
-            ProjectID=result.get("project_id", ""),
-            ProjectName=result.get("project_name", project_name),
-            Created=result.get("created", False),
-            WebURL=result.get("web_url", ""),
-        )
-
-    async def get_app_status(self, app_id: str) -> AppStatusResponse:
-        if not app_id or not app_id.strip():
-            raise ValidationError("App ID cannot be empty", field="app_id")
-
-        endpoint = GET_APP_STATUS_ENDPOINT.format(app_id=app_id)
-        result = await self._async_get(endpoint)
-        if not isinstance(result, dict):
-            raise TargonError(f"Unexpected response format: {type(result).__name__}")
-
-        functions_data = result.get("functions", {})
-        if not isinstance(functions_data, dict):
-            raise TargonError(
-                f"Expected functions to be dict, got {type(functions_data).__name__}"
-            )
-
-        functions = {
-            func_id: FunctionStatus(
-                name=func.get("name", ""),
-                uid=func.get("uid", ""),
-                url=func.get("url", ""),
-                status=func.get("status", ""),
-            )
-            for func_id, func in functions_data.items()
-        }
-
-        return AppStatusResponse(
-            app_id=result.get("app_id", app_id),
-            name=result.get("name", ""),
-            project_id=result.get("project_id", ""),
-            project_name=result.get("project_name", ""),
-            function_count=result.get("function_count", 0),
-            functions=functions,
-            created_at=result.get("created_at", ""),
-            updated_at=result.get("updated_at", ""),
-        )
 
     async def list_apps(self) -> ListAppsResponse:
-        """List all apps that are currently deployed/running or recently stopped."""
+        """List all apps."""
         result = await self._async_get(LIST_APPS_ENDPOINT)
 
         if not isinstance(result, dict):
             raise TargonError(f"Unexpected response format: {type(result).__name__}")
 
-        apps_data = result.get("apps", [])
+        apps_data = result.get("items", [])
         if not isinstance(apps_data, list):
             raise TargonError(
-                f"Expected apps to be list, got {type(apps_data).__name__}"
+                f"Expected apps items to be list, got {type(apps_data).__name__}"
             )
 
         apps = [
             AppListItem(
-                app_id=app.get("app_id", ""),
+                uid=app.get("uid", ""),
                 name=app.get("name", ""),
-                project_id=app.get("project_id", ""),
+                project_id=app.get("project_id"),
                 created_at=app.get("created_at", ""),
                 updated_at=app.get("updated_at", ""),
             )
             for app in apps_data
+            if isinstance(app, dict)
         ]
 
         return ListAppsResponse(
             apps=apps,
-            total=result.get("total", len(apps)),
+            total=len(apps),
+        )
+   
+    async def create_app(self, name: str, project_id: Optional[str] = None) -> AppResponse:
+        if not name or not name.strip():
+            raise ValidationError("App name cannot be empty", field="name")
+
+        if project_id is not None:
+            project_id = project_id.strip() or None
+
+        payload: Dict[str, str] = {"name": name}
+        if project_id is not None:
+            payload["project_id"] = project_id
+
+        result = await self._async_post(CREATE_APP_ENDPOINT, json=payload)
+        if not isinstance(result, dict):
+            raise TargonError(f"Unexpected response format: {type(result).__name__}")
+
+        return AppResponse(
+            uid=result.get("uid", result.get("app_id", "")),
+            project_id=result.get("project_id"),
+            name=result.get("name", name),
+            created_at=result.get("created_at", ""),
+            updated_at=result.get("updated_at", ""),
         )
 
+    async def get_app(self, app_uid: Optional[str] = None, name: Optional[str] = None) -> AppResponse:
+        resolved_app_uid = app_uid or name
+        if not resolved_app_uid or not resolved_app_uid.strip():
+            raise ValidationError("App UID cannot be empty", field="app_uid")
+
+        endpoint = GET_APP_ENDPOINT.format(app_uid=resolved_app_uid)
+        result = await self._async_get(endpoint)
+        if not isinstance(result, dict):
+            raise TargonError(f"Unexpected response format: {type(result).__name__}")
+
+        return AppResponse(
+            uid=result.get("uid", resolved_app_uid),
+            project_id=result.get("project_id"),
+            name=result.get("name", ""),
+            created_at=result.get("created_at", ""),
+            updated_at=result.get("updated_at", ""),
+        )
+
+    async def list_functions(self, app_id: str) -> ListFunctionsResponse:
+        if not app_id or not app_id.strip():
+            raise ValidationError("App ID cannot be empty", field="app_id")
+
+        app_result: AppResponse = await self.get_app(app_id)
+
+        workloads_result = await self._async_get(
+            "/tha/v2/workloads",
+            params={"type": "function", "app_id": app_id},
+        )
+        if not isinstance(workloads_result, dict):
+            raise TargonError(
+                f"Unexpected workloads response format: {type(workloads_result).__name__}"
+            )
+
+        items = workloads_result.get("items", [])
+        if not isinstance(items, list):
+            raise TargonError(
+                f"Expected workloads items to be list, got {type(items).__name__}"
+            )
+
+        functions: List[FunctionItem] = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+
+            state_data = item.get("state")
+            state = (
+                WorkloadState(
+                    status=state_data.get("status", ""),
+                    message=state_data.get("message", ""),
+                    ready_replicas=state_data.get("ready_replicas", 0),
+                    total_replicas=state_data.get("total_replicas", 0),
+                )
+                if isinstance(state_data, dict)
+                else None
+            )
+
+            functions.append(
+                FunctionItem(
+                    uid=item.get("uid", ""),
+                    name=item.get("name", ""),
+                    image=item.get("image", ""),
+                    cost_per_hour=None,
+                    resource=None,
+                    state=state,
+                    created_at=item.get("created_at", ""),
+                    updated_at=item.get("updated_at", ""),
+                )
+            )
+
+        return ListFunctionsResponse(
+            app_id=app_result.uid or app_id,
+            app_name=app_result.name,
+            functions=functions,
+            total=len(functions),
+        )
+
+    async def get_function(self, workload_uid: str) -> FunctionDetailResponse:
+        """Get detailed information about a specific function workload by its UID."""
+        if not workload_uid or not workload_uid.strip():
+            raise ValidationError("Workload UID cannot be empty", field="workload_uid")
+
+        result = await self._async_get(f"/tha/v2/workloads/{workload_uid}")
+
+        if not isinstance(result, dict):
+            raise TargonError(f"Unexpected response format: {type(result).__name__}")
+
+        state_data = result.get("state")
+        state = (
+            WorkloadState(
+                status=state_data.get("status", ""),
+                message=state_data.get("message", ""),
+                ready_replicas=state_data.get("ready_replicas", 0),
+                total_replicas=state_data.get("total_replicas", 0),
+            )
+            if isinstance(state_data, dict)
+            else None
+        )
+
+        resource_data = result.get("resource")
+        resource = (
+            WorkloadResource(
+                name=resource_data.get("name", ""),
+                display_name=resource_data.get("display_name", ""),
+                gpu_type=resource_data.get("gpu_type"),
+                gpu_count=resource_data.get("gpu_count"),
+                vcpu=resource_data.get("vcpu", 0),
+                memory=resource_data.get("memory", 0),
+            )
+            if isinstance(resource_data, dict)
+            else None
+        )
+
+        sc_data = result.get("serverless_config")
+        serverless_config = (
+            ServerlessConfig(
+                module=sc_data.get("module"),
+                qualname=sc_data.get("qualname"),
+                definition_type=sc_data.get("definition_type"),
+                min_replicas=sc_data.get("min_replicas"),
+                max_replicas=sc_data.get("max_replicas"),
+                initial_replicas=sc_data.get("initial_replicas"),
+                container_concurrency=sc_data.get("container_concurrency"),
+                target_concurrency=sc_data.get("target_concurrency"),
+                timeout_seconds=sc_data.get("timeout_seconds"),
+                startup_timeout=sc_data.get("startup_timeout"),
+                webhook_config=sc_data.get("webhook_config"),
+            )
+            if isinstance(sc_data, dict)
+            else None
+        )
+
+        return FunctionDetailResponse(
+            uid=result.get("uid", workload_uid),
+            app_id=result.get("app_id"),
+            name=result.get("name", ""),
+            image=result.get("image", ""),
+            resource_name=result.get("resource_name", ""),
+            cost_per_hour=result.get("cost_per_hour"),
+            resource=resource,
+            serverless_config=serverless_config,
+            state=state,
+            created_at=result.get("created_at", ""),
+            updated_at=result.get("updated_at", ""),
+        )
+        
     async def delete_app(self, app_id: str) -> Dict[str, Any]:
         """Delete an app and all corresponding deployments."""
         if not app_id or not app_id.strip():
             raise ValidationError("App ID cannot be empty", field="app_id")
 
-        endpoint = DELETE_APP_ENDPOINT.format(app_id=app_id)
+        functions_response = await self.list_functions(app_id)
+        function_uids = [fn.uid for fn in functions_response.functions if fn.uid]
+        if function_uids:
+            await asyncio.gather(
+                *(
+                    self.client.async_functions.delete_function(function_uid)
+                    for function_uid in function_uids
+                )
+            )
+
+        endpoint = DELETE_APP_ENDPOINT.format(app_uid=app_id)
         result = await self._async_delete(endpoint)
 
-        if not isinstance(result, dict):
+        if result and not isinstance(result, dict):
             raise TargonError(f"Unexpected response format: {type(result).__name__}")
 
-        return result
-
-    async def list_functions(self, app_id: str) -> ListFunctionsResponse:
-        """List all functions for a given app."""
-        if not app_id or not app_id.strip():
-            raise ValidationError("App ID cannot be empty", field="app_id")
-
-        endpoint = LIST_FUNCTIONS_ENDPOINT.format(app_id=app_id)
-        result = await self._async_get(endpoint)
-
-        if not isinstance(result, dict):
-            raise TargonError(f"Unexpected response format: {type(result).__name__}")
-
-        functions_data = result.get("functions", [])
-        if not isinstance(functions_data, list):
-            raise TargonError(
-                f"Expected functions to be list, got {type(functions_data).__name__}"
-            )
-
-        functions = [
-            FunctionItem(
-                uid=func.get("uid", ""),
-                name=func.get("name", ""),
-                module=func.get("module"),
-                qualname=func.get("qualname"),
-                image_id=func.get("image_id"),
-                created_at=func.get("created_at", ""),
-                updated_at=func.get("updated_at", ""),
-            )
-            for func in functions_data
-        ]
-
-        return ListFunctionsResponse(
-            app_id=result.get("app_id", app_id),
-            functions=functions,
-            total=result.get("total", len(functions)),
-        )
-
-    async def get_function(self, function_id: str) -> FunctionDetailResponse:
-        """Get detailed information about a specific function by its UID."""
-        if not function_id or not function_id.strip():
-            raise ValidationError("Function ID cannot be empty", field="function_id")
-
-        # Use the direct function lookup endpoint
-        endpoint = GET_FUNCTION_BY_ID_ENDPOINT.format(function_id=function_id)
-        result = await self._async_get(endpoint)
-
-        if not isinstance(result, dict):
-            raise TargonError(f"Unexpected response format: {type(result).__name__}")
-
-        # Parse webhook_config if present
-        webhook_config = None
-        if webhook_config_data := result.get("webhook_config"):
-            webhook_config = WebhookConfig(**webhook_config_data)
-
-        # Parse autoscaler_settings if present
-        autoscaler_settings = None
-        if autoscaler_data := result.get("autoscaler_settings"):
-            autoscaler_settings = AutoscalerSettings(**autoscaler_data)
-
-        return FunctionDetailResponse(
-            uid=result.get("uid", function_id),
-            app_id=result.get("app_id", ""),
-            name=result.get("name", ""),
-            module=result.get("module"),
-            qualname=result.get("qualname"),
-            image_id=result.get("image_id"),
-            resource_name=result.get("resource_name"),
-            webhook_config=webhook_config,
-            autoscaler_settings=autoscaler_settings,
-            timeout_secs=result.get("timeout_secs"),
-            startup_timeout=result.get("startup_timeout"),
-            url=result.get("url", ""),
-            status=result.get("status"),
-            created_at=result.get("created_at", ""),
-            updated_at=result.get("updated_at", ""),
-        )
+        return result or {}
 
     async def list_apps_with_details(
         self,
-    ) -> Tuple[ListAppsResponse, List[Optional[AppStatusResponse]]]:
+    ) -> Tuple[ListAppsResponse, List[Optional[ListFunctionsResponse]]]:
         apps_response = await self.list_apps()
 
         if not apps_response.apps:
             return apps_response, []
 
-        # Fetch detailed status for each app in parallel
-        tasks = [self.get_app_status(app.app_id) for app in apps_response.apps]
+        tasks = [self.list_functions(app.uid) for app in apps_response.apps]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
-        # Process results
         detailed_apps = []
         for res in results:
             if isinstance(res, Exception):

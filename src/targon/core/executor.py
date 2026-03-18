@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import AsyncGenerator, Dict, Optional
 
 from targon.client.publish import PublishResponse
-from targon.client.app import AppResponse, AppStatusResponse
+from targon.client.app import AppResponse
 from targon.client.client import Client
 from targon.core.console import Console
 from targon.core.objects import BaseApp, _Object
@@ -34,16 +34,13 @@ async def _init_local_app_from_name(
     name: str,
     project_name: str = "default",
 ) -> RunningApp:
+    app_resp: AppResponse = await client.async_app.create_app(name=name)
 
-    app_resp: AppResponse = await client.async_app.get_app(
-        name=name,
-        project_name=project_name,
-    )
     return RunningApp(
-        app_id=app_resp.AppID,
-        app_name=app_resp.Name,
-        project_name=app_resp.ProjectName,
-        app_page_url=app_resp.WebURL,
+        app_id=app_resp.uid,
+        app_name=app_resp.name,
+        project_name=project_name,
+        app_page_url=None,
     )
 
 
@@ -106,14 +103,17 @@ async def _check_function_deployment_status(
     while True:
         elapsed_time = time.time() - start_time
 
-        status_response: AppStatusResponse = await client.async_app.get_app_status(
+        functions_response = await client.async_app.list_functions(
             app_id=running_app.app_id
         )
 
         non_deployed = [
-            (func_name, func_status.status)
-            for func_name, func_status in status_response.functions.items()
-            if func_status.status != "deployed"
+            (
+                func.name or func.uid,
+                func.state.status if func.state else "unknown",
+            )
+            for func in functions_response.functions
+            if not func.state or func.state.status.lower() not in {"running", "deployed"}
         ]
 
         if not non_deployed:
@@ -224,6 +224,7 @@ async def deploy_app(
         details_list = [
             f"URL: {running_app.app_page_url}" if running_app.app_page_url else None,
             summary_msg,
+            f"Cost/hr: ${publish_response.total_cost_per_hour:.2f}",
             "",
         ]
 
@@ -309,7 +310,7 @@ async def run_app(
     else:
         if console_instance:
             console_instance.info(
-                f"View status: targon app status {running_app.app_id}"
+                f"View status: targon app get {running_app.app_id}"
             )
         sys.exit(1)
 
@@ -381,9 +382,14 @@ async def deploy_config(
             container_name = (
                 requests[idx].name if idx < len(requests) else f"container-{idx}"
             )
-            details_list.append(
-                f"  • {container_name}: https://{resource.uid}.serverless.targon.com"
-            )
+            resource_line = f"  • {container_name}: {resource.url or resource.uid}"
+            if resource.cost_per_hour is not None:
+                resource_line += f" [${resource.cost_per_hour:.2f}/hr]"
+            if resource.status:
+                resource_line += f" [{resource.status}]"
+            details_list.append(resource_line)
+            if resource.message:
+                details_list.append(f"    {resource.message}")
 
         details_list.append("")
 

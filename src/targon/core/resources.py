@@ -3,26 +3,26 @@ class Compute:
     CPU_SMALL = "cpu-small"
     CPU_MEDIUM = "cpu-medium"
     CPU_LARGE = "cpu-large"
-    CPU_XL = "cpu-xl"
+    CPU_XL = "cpu-xlarge"
 
     # GPU Tiers
     # H200s
     H200_SMALL = "h200-small"
     H200_MEDIUM = "h200-medium"
     H200_LARGE = "h200-large"
-    H200_XL = "h200-xl"
+    H200_XL = "h200-xlarge"
     # H100s
     H100_SMALL = "h100-small"
     H100_MEDIUM = "h100-medium"
     H100_LARGE = "h100-large"
-    H100_XL = "h100-xl"
+    H100_XL = "h100-xlarge"
     # B200s
     B200_SMALL = "b200-small"
     B200_MEDIUM = "b200-medium"
     B200_LARGE = "b200-large"
-    B200_XL = "b200-xl"
+    B200_XL = "b200-xlarge"
     # RTXP6000B
-    RTXP6000B_SMALL = "rtx6000B-small"
+    RTXP6000B_SMALL = "rtx6000b-small"
     # RTX4090s
     RTX4090_SMALL="rtx4090-small"
     RTX4090_MEDIUM="rtx4090-medium"

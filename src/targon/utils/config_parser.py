@@ -129,7 +129,6 @@ def _parse_registry(data: Optional[Dict[str, Any]]) -> Optional[RegistryConfig]:
         server=data.get('server', 'https://index.docker.io/v1/'),
         username=data.get('username'),
         password=data.get('password'),
-        email=data.get('email'),
     )
 
 
@@ -261,8 +260,6 @@ def _config_to_dict(config: _DeployConfig) -> Dict[str, Any]:
             reg_dict['username'] = config.registry.username
         if config.registry.password:
             reg_dict['password'] = config.registry.password
-        if config.registry.email:
-            reg_dict['email'] = config.registry.email
         if reg_dict:
             result['registry'] = reg_dict
 
@@ -344,7 +341,6 @@ def config_to_serverless_requests(
                 server=container.registry.server,
                 username=container.registry.username or "",
                 password=container.registry.password or "",
-                email=container.registry.email,
             )
 
         serverless_container = ServerlessContainerConfig(
@@ -361,12 +357,14 @@ def config_to_serverless_requests(
             scaling = AutoScalingConfig(
                 min_replicas=container.replicas.min,
                 max_replicas=container.replicas.max,
+                initial_replicas=container.replicas.min if container.replicas.min > 0 else None,
+                container_concurrency=container.replicas.container_concurrency,
                 target_concurrency=container.replicas.target_concurrency,
             )
 
         network = None
         if container.port:
-            port_config = PortConfig(port=container.port)
+            port_config = PortConfig(port=container.port, protocol="TCP")
             visibility = "cluster-local" if container.internal else "external"
             network = NetworkConfig(port=port_config, visibility=visibility)
 
