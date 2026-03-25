@@ -48,6 +48,12 @@ class APIError(TargonError):
         self.request_id = request_id
 
     @property
+    def reason(self) -> Optional[str]:
+        if isinstance(self.response, dict):
+            return self.response.get("reason")
+        return None
+
+    @property
     def is_client_error(self) -> bool:
         return 400 <= self.status_code < 500
 

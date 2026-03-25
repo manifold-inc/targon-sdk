@@ -361,7 +361,21 @@ class AsyncBaseHTTPClient:
     async def _handle_async_response(self, res: aiohttp.ClientResponse):
         if res.status >= 400:
             text = await res.text()
-            raise APIError(res.status, text)
+            message = text
+            reason = None
+            try:
+                import json
+                body = json.loads(text)
+                if isinstance(body, dict):
+                    message = body.get("error", text)
+                    reason = body.get("reason")
+            except (json.JSONDecodeError, ValueError):
+                pass
+            raise APIError(
+                res.status,
+                message,
+                response={"reason": reason} if reason else None,
+            )
         try:
             return (
                 await res.json()
