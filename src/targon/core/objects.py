@@ -346,6 +346,10 @@ class AsyncBaseHTTPClient:
         async with self.session.post(f"{self.base_url}{path}", **kwargs) as res:
             return await self._handle_async_response(res)
 
+    async def _async_put(self, path: str, **kwargs: Any):
+        async with self.session.put(f"{self.base_url}{path}", **kwargs) as res:
+            return await self._handle_async_response(res)
+
     async def _async_patch(self, path: str, **kwargs: Any):
         async with self.session.patch(f"{self.base_url}{path}", **kwargs) as res:
             return await self._handle_async_response(res)
