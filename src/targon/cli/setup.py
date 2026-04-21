@@ -32,7 +32,7 @@ def setup():
             "\n[bold green]✔[/bold green] [bold]API key saved successfully![/bold]"
         )
         _rich_console.print(
-            "[dim italic]  You're ready to use Targon. Try 'targon app list' to get started.[/dim italic]\n"
+            "[dim italic]  You're ready to use Targon. Try 'targon app ls' to get started.[/dim italic]\n"
         )
     else:
         _rich_console.print(
