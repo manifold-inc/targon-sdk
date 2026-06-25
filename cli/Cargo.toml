@@ -1,0 +1,36 @@
+[package]
+name = "targon-cli"
+version = "2.0.0"
+edition = "2021"
+description = "Targon CLI to interact with Targon workloads"
+license = "Apache-2.0"
+authors = ["Manifold Labs <dev@manifold.inc>"]
+repository = "https://github.com/manifold-inc/targon-sdk"
+readme = "README.md"
+
+[lib]
+name = "targon_cli"
+path = "src/lib.rs"
+
+[[bin]]
+name = "targon"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+reqwest = { version = "0.12", features = ["json", "stream", "rustls-tls"], default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+thiserror = "2"
+chrono = { version = "0.4", features = ["serde"] }
+futures-util = "0.3"
+tokio-stream = "0.1"
+bytes = "1"
+dialoguer = "0.11"
+comfy-table = "7"
+indicatif = "0.17"
+colored = "3"
+dirs = "6"
+toml = "0.8"

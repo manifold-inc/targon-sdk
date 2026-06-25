@@ -1,4 +1,4 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Default)]
 pub struct Page {
@@ -19,7 +19,7 @@ impl Page {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct List<T> {
     #[serde(default = "Vec::new")]
     pub items: Vec<T>,

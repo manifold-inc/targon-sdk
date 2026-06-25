@@ -75,7 +75,7 @@ pub struct VolumeMount {
     pub last_backup_at: Option<DateTime<Utc>>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Version {
     pub name: String,
     pub version: String,

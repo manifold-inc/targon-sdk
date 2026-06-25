@@ -1,6 +1,6 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InventorySpec {
     #[serde(default)]
     pub gpu_type: Option<String>,
@@ -14,7 +14,7 @@ pub struct InventorySpec {
     pub storage: u32,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Inventory {
     pub name: String,
     pub display_name: String,

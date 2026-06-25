@@ -1,1 +1,0 @@
-# Targon gRPC protocol definitions.

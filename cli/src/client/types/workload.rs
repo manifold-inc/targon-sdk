@@ -11,13 +11,13 @@ pub enum WorkloadType {
     Rental,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkloadUrl {
     pub port: u16,
     pub url: String,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkloadResource {
     pub name: String,
     pub display_name: String,
@@ -33,7 +33,7 @@ pub struct WorkloadResource {
     pub network_mode: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkloadState {
     pub status: State,
     #[serde(default)]
@@ -48,7 +48,7 @@ pub struct WorkloadState {
     pub total_replicas: u32,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkloadSshKey {
     pub uid: String,
     pub name: String,
@@ -56,7 +56,7 @@ pub struct WorkloadSshKey {
     pub public_key: String,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Workload {
     pub uid: String,
     pub name: String,
@@ -94,7 +94,7 @@ pub struct Workload {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkloadSummary {
     pub uid: String,
     pub name: String,
@@ -116,7 +116,7 @@ pub struct WorkloadSummary {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkloadStateResponse {
     pub uid: String,
     pub workload_type: String,
@@ -134,7 +134,7 @@ pub struct WorkloadStateResponse {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkloadEvent {
     pub workload_uid: String,
     pub workload_type: String,
@@ -260,7 +260,7 @@ pub struct VerifyWorkloadRequest {
     pub digest: String,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VerifyWorkloadResponse {
     pub verified: bool,
 }
@@ -272,7 +272,7 @@ pub struct AttachVolumeRequest {
     pub read_only: bool,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkloadVolume {
     pub workload_uid: String,
     pub uid: String,
@@ -280,7 +280,7 @@ pub struct WorkloadVolume {
     pub read_only: bool,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkloadSshKeyAttachment {
     pub workload_uid: String,
     pub ssh_key_uid: String,

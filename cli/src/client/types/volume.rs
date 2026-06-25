@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use super::common::State;
 use crate::client::pagination::Page;
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VolumeState {
     pub status: State,
     #[serde(default)]
@@ -13,7 +13,7 @@ pub struct VolumeState {
     pub updated_at: Option<DateTime<Utc>>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Volume {
     pub uid: String,
     pub name: String,
@@ -35,7 +35,7 @@ pub struct Volume {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VolumeStateResponse {
     pub uid: String,
     pub status: State,
@@ -44,14 +44,14 @@ pub struct VolumeStateResponse {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VolumeOperationResponse {
     pub uid: String,
     #[serde(default)]
     pub state: Option<VolumeState>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VolumeEvent {
     pub volume_uid: String,
     pub event_type: String,
