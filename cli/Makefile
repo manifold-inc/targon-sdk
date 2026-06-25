@@ -1,6 +1,6 @@
 .PHONY: build test lint fmt clean
 
-OUT_DIR := out
+OUT_DIR := ../out
 BIN_NAME := targon
 
 build:
