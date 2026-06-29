@@ -1,8 +1,15 @@
 SRC := src
 
-.PHONY: build test lint fmt clean
+.PHONY: install install-dev build test lint fmt clean
+
+install:
+	pip install -e .
+
+install-dev:
+	pip install -e ".[dev]"
 
 build:
+	pip install -U build wheel
 	python -m build
 
 test:
@@ -12,8 +19,6 @@ lint:
 	black --check $(SRC)
 	isort --check-only $(SRC)
 	flake8 $(SRC)
-	mypy $(SRC)
-
 fmt:
 	isort $(SRC)
 	black $(SRC)

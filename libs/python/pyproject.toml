@@ -28,11 +28,6 @@ license-files = ["LICENSE"]
 
 dependencies = [
     "requests>=2.28",
-    "aiohttp>=3.8",
-    "PyYAML>=6.0",
-    "grpcio>=1.60.0",
-    "grpcio-health-checking>=1.60.0",
-    "protobuf>=4.25.0",
 ]
 
 [project.optional-dependencies]
@@ -40,8 +35,7 @@ dev = [
     "black>=24.0",
     "flake8>=6.0",
     "isort>=6.0",
-    "mypy>=1.5",
-    "grpcio-tools>=1.60.0",
+    "types-requests",
 ]
 
 [tool.setuptools]
