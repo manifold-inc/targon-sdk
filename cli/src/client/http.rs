@@ -100,6 +100,22 @@ impl HttpClient {
         Ok(resp.bytes_stream())
     }
 
+    pub async fn post_stream(
+        &self,
+        path: &str,
+        query: &[(&str, String)],
+    ) -> Result<impl Stream<Item = reqwest::Result<Bytes>>> {
+        // Exec keeps the connection open while the command runs, so no timeout is applied.
+        let resp = self
+            .request(Method::POST, path)
+            .query(query)
+            .header(ACCEPT, "text/plain")
+            .send()
+            .await?;
+        let resp = self.check(resp).await?;
+        Ok(resp.bytes_stream())
+    }
+
     fn request(&self, method: Method, path: &str) -> RequestBuilder {
         self.inner.request(method, self.config.url(path))
     }

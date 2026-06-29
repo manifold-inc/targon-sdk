@@ -101,6 +101,17 @@ pub enum WorkloadCommands {
         #[arg(long, default_value_t = 20)]
         limit: u32,
     },
+    /// Run a command inside a workload
+    Exec {
+        uid: String,
+        #[arg(
+            trailing_var_arg = true,
+            allow_hyphen_values = true,
+            required = true,
+            value_name = "COMMAND"
+        )]
+        command: Vec<String>,
+    },
     /// Attach a volume to a workload
     AttachVolume {
         uid: String,
@@ -147,6 +158,7 @@ pub async fn handle(ctx: &Context, cmd: &WorkloadCommands) -> Result<()> {
             follow,
         } => logs(ctx, uid, since.clone(), *tail, *previous, *follow).await,
         WorkloadCommands::Events { uid, limit } => events(ctx, uid, *limit).await,
+        WorkloadCommands::Exec { uid, command } => exec(ctx, uid, command).await,
         WorkloadCommands::AttachVolume {
             uid,
             volume_uid,
@@ -481,6 +493,18 @@ async fn events(ctx: &Context, uid: &str, limit: u32) -> Result<()> {
         ]);
     }
     println!("{t}");
+    Ok(())
+}
+
+async fn exec(ctx: &Context, uid: &str, command: &[String]) -> Result<()> {
+    let stream = ctx.client.workloads().exec(uid, command).await?;
+    pin_mut!(stream);
+    let mut stdout = std::io::stdout();
+    while let Some(chunk) = stream.next().await {
+        let bytes = chunk.map_err(ClientError::from)?;
+        stdout.write_all(&bytes)?;
+        stdout.flush()?;
+    }
     Ok(())
 }
 

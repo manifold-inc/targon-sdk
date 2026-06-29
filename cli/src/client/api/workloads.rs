@@ -89,6 +89,18 @@ impl Workloads {
             .await
     }
 
+    pub async fn exec(
+        &self,
+        uid: &str,
+        command: &[String],
+    ) -> Result<impl Stream<Item = reqwest::Result<Bytes>>> {
+        let query: Vec<(&str, String)> =
+            command.iter().map(|arg| ("command", arg.clone())).collect();
+        self.http
+            .post_stream(&format!("/workloads/{uid}/exec"), &query)
+            .await
+    }
+
     pub async fn verify(&self, uid: &str, digest: &str) -> Result<VerifyWorkloadResponse> {
         let req = VerifyWorkloadRequest {
             uid: uid.to_string(),
