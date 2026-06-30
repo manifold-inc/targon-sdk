@@ -102,6 +102,22 @@ class ValidationError(TargonError):
         self.value = value
 
 
+class HydrationError(TargonError):
+    __slots__ = ("object_type",)
+
+    def __init__(
+        self,
+        message: str,
+        object_type: Optional[str] = None,
+    ) -> None:
+        details: Dict[str, Any] = {}
+        if object_type:
+            details["object_type"] = object_type
+
+        super().__init__(message, details)
+        self.object_type = object_type
+
+
 class ConfigurationError(TargonError):
     __slots__ = ("config_key",)
 

@@ -11,6 +11,7 @@ WORKLOAD_DEPLOY_ENDPOINT = f"{API_VERSION_V2}/workloads/{{workload_uid}}/deploy"
 WORKLOAD_STATE_ENDPOINT = f"{API_VERSION_V2}/workloads/{{workload_uid}}/state"
 WORKLOAD_EVENTS_ENDPOINT = f"{API_VERSION_V2}/workloads/{{workload_uid}}/events"
 WORKLOAD_LOGS_ENDPOINT = f"{API_VERSION_V2}/workloads/{{workload_uid}}/logs"
+WORKLOAD_EXEC_ENDPOINT = f"{API_VERSION_V2}/workloads/{{workload_uid}}/exec"
 WORKLOAD_VERIFY_ENDPOINT = f"{API_VERSION_V2}/workloads/verify"
 WORKLOAD_VOLUME_ENDPOINT = (
     f"{API_VERSION_V2}/workloads/{{workload_uid}}/volumes/{{volume_uid}}"

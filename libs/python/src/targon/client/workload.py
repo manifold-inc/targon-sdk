@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import time
+import uuid
 from dataclasses import dataclass, field
 from typing import Any, Dict, Iterator, List, Optional, Sequence, Union
 
@@ -13,6 +14,7 @@ from targon.client.constants import (
     WORKLOAD_DEPLOY_ENDPOINT,
     WORKLOAD_DETAIL_ENDPOINT,
     WORKLOAD_EVENTS_ENDPOINT,
+    WORKLOAD_EXEC_ENDPOINT,
     WORKLOAD_LOGS_ENDPOINT,
     WORKLOAD_SSH_KEY_ENDPOINT,
     WORKLOAD_STATE_ENDPOINT,
@@ -33,6 +35,10 @@ from targon.core.objects import BaseHTTPClient
 TERMINAL_WORKLOAD_STATES = frozenset(
     {"failed", "error", "stopped", "deleted", "terminated"}
 )
+
+# Maximum total byte length of exec command arguments. The Linux ARG_MAX is
+# typically 2**17; we keep some headroom to avoid "Argument list too long".
+ARG_MAX_BYTES = 2**16
 
 
 def _validate_non_empty(value: Optional[str], field_name: str) -> str:
@@ -558,6 +564,24 @@ class SshKeyAttachResponse:
         )
 
 
+@dataclass(slots=True)
+class ExecResponse:
+    """Result of running a command inside a workload via ``exec``.
+
+    ``result`` holds the merged stdout/stderr text. ``exit_code`` is the exit
+    status of the command (recovered by shell-wrapping the command, since the
+    exec endpoint does not surface it directly).
+    """
+
+    exit_code: int
+    result: str
+
+    @property
+    def output(self) -> str:
+        """Alias for :attr:`result`."""
+        return self.result
+
+
 class WorkloadClient(BaseHTTPClient):
     def __init__(self, client):
         super().__init__(client)
@@ -704,30 +728,26 @@ class WorkloadClient(BaseHTTPClient):
             return result
         return str(result)
 
-    def stream_logs(
+    def _stream_text(
         self,
-        workload_uid: str,
+        method: str,
+        endpoint: str,
         *,
-        follow: bool = True,
-        previous: bool = False,
+        params: Any = None,
+        timeout: Any = (10, None),
+        error_label: str = "endpoint",
     ) -> Iterator[str]:
-        workload_uid = _validate_non_empty(workload_uid, "workload_uid")
-        url = (
-            f"{self.base_url}"
-            f"{WORKLOAD_LOGS_ENDPOINT.format(workload_uid=workload_uid)}"
-        )
-        params: Dict[str, str] = {"follow": str(follow).lower()}
-        if previous:
-            params["previous"] = "true"
+        """Stream a text/plain response line by line, without retries.
 
-        # Send through a dedicated adapter with retries disabled. The shared
-        # session retries 5xx responses, which turns a transient error (e.g.
-        # the logs endpoint returning 500 while the workload is still
-        # provisioning) into an opaque urllib3 RetryError. Without retries the
-        # response is returned as-is so we can raise a clean APIError that
-        # carries the server's message and reason.
+        The shared session retries 5xx responses, which turns a transient
+        error (e.g. an endpoint returning 500 while the workload is still
+        provisioning) into an opaque urllib3 RetryError. Sending through a
+        dedicated adapter with retries disabled lets us raise a clean APIError
+        carrying the server's message and reason instead.
+        """
+        url = f"{self.base_url}{endpoint}"
         request = requests.Request(
-            "GET", url, params=params, headers={"Accept": "text/plain"}
+            method, url, params=params, headers={"Accept": "text/plain"}
         )
         prepared = self.session.prepare_request(request)
         verify = self.session.verify
@@ -739,11 +759,11 @@ class WorkloadClient(BaseHTTPClient):
                 response = adapter.send(
                     prepared,
                     stream=True,
-                    timeout=(10, None),
+                    timeout=timeout,
                     verify=verify,
                 )
             except requests.RequestException as e:
-                raise APIError(500, f"Failed to connect to logs endpoint: {e}", cause=e)
+                raise APIError(500, f"Failed to connect to {error_label}: {e}", cause=e)
 
             with response:
                 if response.status_code >= 400:
@@ -769,6 +789,110 @@ class WorkloadClient(BaseHTTPClient):
                             yield decoded
         finally:
             adapter.close()
+
+    def stream_logs(
+        self,
+        workload_uid: str,
+        *,
+        follow: bool = True,
+        previous: bool = False,
+    ) -> Iterator[str]:
+        workload_uid = _validate_non_empty(workload_uid, "workload_uid")
+        params: Dict[str, str] = {"follow": str(follow).lower()}
+        if previous:
+            params["previous"] = "true"
+        yield from self._stream_text(
+            "GET",
+            WORKLOAD_LOGS_ENDPOINT.format(workload_uid=workload_uid),
+            params=params,
+            error_label="logs endpoint",
+        )
+
+    # -- Exec ----------------------------------------------------------------
+
+    def _exec_raw(
+        self,
+        workload_uid: str,
+        command: Sequence[str],
+        *,
+        timeout: Optional[float] = None,
+    ) -> Iterator[str]:
+        """Stream a raw argv exec against the workload exec endpoint."""
+        workload_uid = _validate_non_empty(workload_uid, "workload_uid")
+        argv = list(command)
+        if not argv:
+            raise ValidationError("command must not be empty", field="command")
+        if not all(isinstance(arg, str) for arg in argv):
+            raise ValidationError(
+                "all command arguments must be strings", field="command"
+            )
+        total = sum(len(arg) for arg in argv)
+        if total > ARG_MAX_BYTES:
+            raise ValidationError(
+                f"command arguments exceed {ARG_MAX_BYTES} bytes (ARG_MAX); "
+                f"got {total}",
+                field="command",
+            )
+        params = [("command", arg) for arg in argv]
+        yield from self._stream_text(
+            "POST",
+            WORKLOAD_EXEC_ENDPOINT.format(workload_uid=workload_uid),
+            params=params,
+            timeout=(10, timeout),
+            error_label="exec endpoint",
+        )
+
+    def exec_stream(
+        self,
+        workload_uid: str,
+        command: str,
+        *,
+        timeout: Optional[float] = None,
+    ) -> Iterator[str]:
+        """Run a shell command and stream its merged stdout/stderr lines.
+
+        No exit code is returned; use :meth:`exec` if you need the exit code.
+        """
+        if not isinstance(command, str) or not command.strip():
+            raise ValidationError("command must be a non-empty string", field="command")
+        yield from self._exec_raw(workload_uid, ["sh", "-c", command], timeout=timeout)
+
+    def exec(
+        self,
+        workload_uid: str,
+        command: str,
+        *,
+        timeout: Optional[float] = None,
+    ) -> ExecResponse:
+        """Run a shell command inside the workload and capture the result.
+
+        The command is wrapped in ``sh -c`` with a sentinel that echoes the
+        exit status, since the exec endpoint merges stdout/stderr and does not
+        surface an exit code on its own. Requires a shell (``sh``) in the
+        image.
+        """
+        if not isinstance(command, str) or not command.strip():
+            raise ValidationError("command must be a non-empty string", field="command")
+        sentinel = f"__TARGON_EXIT_{uuid.uuid4().hex}__"
+        wrapped = f"{command}\nprintf '\\n%s:%s' '{sentinel}' \"$?\""
+        chunks = list(
+            self._exec_raw(workload_uid, ["sh", "-c", wrapped], timeout=timeout)
+        )
+        output = "\n".join(chunks)
+
+        exit_code = 0
+        marker = f"{sentinel}:"
+        idx = output.rfind(marker)
+        if idx != -1:
+            result = output[:idx].rstrip("\n")
+            tail = output[idx + len(marker) :].strip()
+            try:
+                exit_code = int(tail)
+            except ValueError:
+                exit_code = 0
+        else:
+            result = output
+        return ExecResponse(exit_code=exit_code, result=result)
 
     def verify(self, uid: str, digest: str) -> bool:
         uid = _validate_non_empty(uid, "uid")

@@ -9,6 +9,7 @@ from targon.client.projects import (
     ProjectClient,
     ProjectListResponse,
 )
+from targon.client.sandbox import Sandbox
 from targon.client.ssh_key import (
     SshKey,
     SshKeyClient,
@@ -35,6 +36,7 @@ from targon.client.volume import (
 from targon.client.workload import (
     CreateWorkloadRequest,
     EnvVar,
+    ExecResponse,
     PortConfig,
     RegistryAuth,
     SshKeyAttachResponse,
@@ -56,6 +58,9 @@ from targon.client.workload import (
 
 __all__ = [
     "Client",
+    # sandbox
+    "Sandbox",
+    "ExecResponse",
     # workload
     "WorkloadClient",
     "CreateWorkloadRequest",
