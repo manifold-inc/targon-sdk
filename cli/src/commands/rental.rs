@@ -294,7 +294,7 @@ async fn build_request(
         Some(resource) => resource,
         None => {
             prompt::require_tty("--resource")?;
-            commands::select_resource(ctx).await?
+            commands::select_resource(ctx, "rental").await?
         }
     };
 
@@ -332,7 +332,7 @@ async fn build_request(
     }
 
     if prompt::is_tty() && !yes {
-        let pricing = commands::resource_pricing(ctx, &req.resource_name).await;
+        let pricing = commands::resource_pricing(ctx, &req.resource_name, "rental").await;
         eprintln!();
         style::summary_box("rental", &summary_rows(&req, pricing.as_ref()));
         let confirm_msg = match &pricing {

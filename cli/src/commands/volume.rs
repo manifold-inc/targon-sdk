@@ -79,7 +79,7 @@ async fn create(
         Some(resource) => resource,
         None => {
             prompt::require_tty("--resource")?;
-            commands::select_resource(ctx).await?
+            commands::select_resource(ctx, "storage").await?
         }
     };
     let size_gib = match size {

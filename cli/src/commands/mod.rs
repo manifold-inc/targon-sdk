@@ -48,11 +48,14 @@ impl Context {
     }
 }
 
-pub async fn select_resource(ctx: &Context) -> Result<String> {
+pub async fn select_resource(ctx: &Context, resource_type: &str) -> Result<String> {
     let items = ctx
         .client
         .inventory()
-        .list(&InventoryFilter::default())
+        .list(&InventoryFilter {
+            resource_type: Some(resource_type.to_string()),
+            ..Default::default()
+        })
         .await?;
     if items.is_empty() {
         return Err(CliError::Config(
@@ -77,10 +80,17 @@ pub async fn select_resource(ctx: &Context) -> Result<String> {
 /// Best-effort inventory lookup so confirmation prompts can show the exact
 /// hourly cost before spending money. Failures are swallowed — pricing is
 /// display-only here.
-pub(crate) async fn resource_pricing(ctx: &Context, resource_name: &str) -> Option<Inventory> {
+pub(crate) async fn resource_pricing(
+    ctx: &Context,
+    resource_name: &str,
+    resource_type: &str,
+) -> Option<Inventory> {
     ctx.client
         .inventory()
-        .list(&InventoryFilter::default())
+        .list(&InventoryFilter {
+            resource_type: Some(resource_type.to_string()),
+            ..Default::default()
+        })
         .await
         .ok()?
         .into_iter()

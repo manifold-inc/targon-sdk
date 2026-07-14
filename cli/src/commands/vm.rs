@@ -186,7 +186,7 @@ async fn build_request(
         Some(resource) => resource,
         None => {
             prompt::require_tty("--resource")?;
-            commands::select_resource(ctx).await?
+            commands::select_resource(ctx, "vm").await?
         }
     };
     let password = read_password(spec.password_stdin)?;
@@ -205,7 +205,7 @@ async fn build_request(
     req.vm_config = Some(VmConfig { password });
 
     if prompt::is_tty() && !yes {
-        let pricing = commands::resource_pricing(ctx, &req.resource_name).await;
+        let pricing = commands::resource_pricing(ctx, &req.resource_name, "vm").await;
         let mut rows = vec![
             ("name", req.name.clone()),
             ("image", req.image.clone()),
