@@ -3,6 +3,7 @@ use colored::{Color, Colorize};
 use serde::Serialize;
 
 use crate::error::{CliError, Result};
+use crate::output::{palettes, style};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OutputFormat {
@@ -37,16 +38,42 @@ pub fn classify(status: &str) -> StateKind {
 
 pub fn state_color(kind: StateKind) -> Color {
     match kind {
-        StateKind::Ok => Color::Green,
-        StateKind::Pending => Color::Yellow,
-        StateKind::Bad => Color::Red,
-        StateKind::Idle => Color::BrightBlack,
-        StateKind::Unknown => Color::White,
+        StateKind::Ok => palettes::SUCCESS,
+        StateKind::Pending => palettes::WARN,
+        StateKind::Bad => palettes::ERROR,
+        StateKind::Idle => palettes::WARN,
+        StateKind::Unknown => palettes::DIM,
     }
 }
 
+/// Colored dot + state word, e.g. `● running` in green.
 pub fn state_badge(status: &str) -> String {
-    status.color(state_color(classify(status))).to_string()
+    let color = state_color(classify(status));
+    format!(
+        "{} {}",
+        style::DOT.color(color),
+        status.to_lowercase().color(color)
+    )
+}
+
+/// Workload type in its own hue (RENTAL blue, VM magenta).
+pub fn type_badge(workload_type: &str) -> String {
+    workload_type
+        .color(palettes::workload_type_color(workload_type))
+        .to_string()
+}
+
+/// Credits with semantic thresholds: green normally, yellow under $25,
+/// red at zero.
+pub fn credits_badge(amount: f64, currency: &str) -> String {
+    let color = if amount <= 0.0 {
+        palettes::ERROR
+    } else if amount < 25.0 {
+        palettes::WARN
+    } else {
+        palettes::SUCCESS
+    };
+    format!("{amount:.2} {currency}").color(color).bold().to_string()
 }
 
 pub fn print_json<T: Serialize>(value: &T) -> Result<()> {

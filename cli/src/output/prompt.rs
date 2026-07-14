@@ -1,9 +1,18 @@
 use std::io::IsTerminal;
 
+use dialoguer::console::{style, Style};
 use dialoguer::theme::ColorfulTheme;
 use dialoguer::{Confirm, Input, Password, Select};
 
 use crate::error::{CliError, Result};
+
+// Nearest xterm-256 approximations of the design palette (the console crate
+// used by dialoguer has no truecolor support): 80 ≈ #56D4DD accent,
+// 242 ≈ #5C6773 dim, 203 ≈ #F0716B err, 78 ≈ #3FD68F ok.
+const ACCENT_256: u8 = 80;
+const DIM_256: u8 = 242;
+const ERR_256: u8 = 203;
+const OK_256: u8 = 78;
 
 pub fn is_tty() -> bool {
     std::io::stdin().is_terminal()
@@ -18,7 +27,23 @@ pub fn require_tty(field: &str) -> Result<()> {
 }
 
 fn theme() -> ColorfulTheme {
-    ColorfulTheme::default()
+    let accent = Style::new().for_stderr().color256(ACCENT_256);
+    let dim = Style::new().for_stderr().color256(DIM_256);
+    ColorfulTheme {
+        prompt_prefix: style("?".to_string()).for_stderr().color256(ACCENT_256),
+        prompt_suffix: style("›".to_string()).for_stderr().color256(DIM_256),
+        success_prefix: style("?".to_string()).for_stderr().color256(ACCENT_256),
+        success_suffix: style("›".to_string()).for_stderr().color256(DIM_256),
+        error_prefix: style("✗".to_string()).for_stderr().color256(ERR_256),
+        error_style: Style::new().for_stderr().color256(ERR_256),
+        hint_style: dim.clone(),
+        defaults_style: dim,
+        values_style: accent.clone(),
+        active_item_style: accent,
+        active_item_prefix: style("❯".to_string()).for_stderr().color256(OK_256),
+        checked_item_prefix: style("✓".to_string()).for_stderr().color256(OK_256),
+        ..ColorfulTheme::default()
+    }
 }
 
 pub fn input(prompt: &str) -> Result<String> {

@@ -1,11 +1,12 @@
 use clap::Subcommand;
+use colored::Colorize;
 use comfy_table::Cell;
 
 use crate::client::pagination::Page;
 use crate::client::types::{CreateProjectRequest, UpdateProjectRequest};
-use crate::commands::Context;
+use crate::commands::{workload, Context};
 use crate::error::Result;
-use crate::output::{format, style, table};
+use crate::output::{format, palettes, style, table};
 
 #[derive(Debug, Subcommand)]
 pub enum ProjectCommands {
@@ -29,6 +30,10 @@ pub enum ProjectCommands {
     Delete {
         uid: String,
     },
+    /// Set the active project for this profile
+    Use {
+        uid: String,
+    },
 }
 
 pub async fn handle(ctx: &Context, cmd: &ProjectCommands) -> Result<()> {
@@ -38,7 +43,18 @@ pub async fn handle(ctx: &Context, cmd: &ProjectCommands) -> Result<()> {
         ProjectCommands::Create { name } => create(ctx, name).await,
         ProjectCommands::Update { uid, name } => update(ctx, uid, name).await,
         ProjectCommands::Delete { uid } => delete(ctx, uid).await,
+        ProjectCommands::Use { uid } => set_active(ctx, uid).await,
     }
+}
+
+async fn set_active(ctx: &Context, uid: &str) -> Result<()> {
+    let project = ctx.client.projects().get(uid).await?;
+    let profile = crate::config::set_project(Some(&ctx.profile), Some(project.uid.clone()))?;
+    style::success(format!(
+        "active project for profile '{profile}' set to {} ({})",
+        project.name, project.uid
+    ));
+    Ok(())
 }
 
 async fn list(ctx: &Context) -> Result<()> {
@@ -53,12 +69,13 @@ async fn list(ctx: &Context) -> Result<()> {
     let mut t = table::table(&["UID", "NAME", "CREATED"]);
     for project in &projects.items {
         t.add_row(vec![
-            Cell::new(&project.uid),
+            table::uid_cell(&project.uid),
             Cell::new(&project.name),
             table::dim_cell(format::relative_time(project.created_at)),
         ]);
     }
-    println!("{t}");
+    table::print(&t);
+    table::summary(workload::plural(projects.items.len(), "project"));
     Ok(())
 }
 
@@ -67,7 +84,7 @@ async fn get(ctx: &Context, uid: &str) -> Result<()> {
     if ctx.json() {
         return format::print_json(&project);
     }
-    style::field("UID", &project.uid);
+    style::field("UID", project.uid.color(palettes::ACCENT).to_string());
     style::field("Name", &project.name);
     style::field("Created", format::relative_time(project.created_at));
     style::field("Updated", format::relative_time(project.updated_at));

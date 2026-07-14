@@ -9,7 +9,7 @@ pub enum CliError {
     #[error(transparent)]
     Client(#[from] ClientError),
 
-    #[error("not authenticated; run `targon auth login` or set TARGON_API_KEY")]
+    #[error("not authenticated\nlog in with: targon auth login (or set TARGON_API_KEY)")]
     NotAuthenticated,
 
     #[error("{0} is required; pass it as a flag when running non-interactively")]

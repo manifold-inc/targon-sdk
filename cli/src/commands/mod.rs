@@ -1,13 +1,15 @@
 pub mod auth;
 pub mod inventory;
 pub mod project;
+pub mod rental;
 pub mod ssh_key;
-pub mod user;
 pub mod version;
+pub mod vm;
 pub mod volume;
+pub mod whoami;
 pub mod workload;
 
-use crate::client::types::InventoryFilter;
+use crate::client::types::{Inventory, InventoryFilter, Workload};
 use crate::client::Client;
 use crate::error::{CliError, Result};
 use crate::output::{format, prompt, OutputFormat};
@@ -15,15 +17,34 @@ use crate::output::{format, prompt, OutputFormat};
 pub struct Context {
     pub client: Client,
     pub format: OutputFormat,
+    pub profile: String,
+    pub base_url: String,
+    pub project: Option<String>,
 }
 
 impl Context {
-    pub fn new(client: Client, format: OutputFormat) -> Self {
-        Self { client, format }
+    pub fn new(
+        client: Client,
+        format: OutputFormat,
+        profile: String,
+        base_url: String,
+        project: Option<String>,
+    ) -> Self {
+        Self {
+            client,
+            format,
+            profile,
+            base_url,
+            project,
+        }
     }
 
     pub fn json(&self) -> bool {
         self.format.is_json()
+    }
+
+    pub fn project(&self, flag: Option<String>) -> Option<String> {
+        flag.or_else(|| self.project.clone())
     }
 }
 
@@ -51,4 +72,62 @@ pub async fn select_resource(ctx: &Context) -> Result<String> {
         .collect();
     let idx = prompt::select("Select a resource", &labels)?;
     Ok(items[idx].name.clone())
+}
+
+/// Best-effort inventory lookup so confirmation prompts can show the exact
+/// hourly cost before spending money. Failures are swallowed — pricing is
+/// display-only here.
+pub(crate) async fn resource_pricing(ctx: &Context, resource_name: &str) -> Option<Inventory> {
+    ctx.client
+        .inventory()
+        .list(&InventoryFilter::default())
+        .await
+        .ok()?
+        .into_iter()
+        .find(|i| i.name == resource_name)
+}
+
+pub(crate) fn prompt_list(label: &str) -> Result<Vec<String>> {
+    Ok(prompt::optional(label)?
+        .map(|raw| {
+            raw.split(',')
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default())
+}
+
+pub(crate) async fn ensure_rental(ctx: &Context, uid: &str, verb: &str) -> Result<Workload> {
+    let workload = ctx.client.workloads().get(uid).await?;
+    if workload.workload_type == "VM" {
+        // First line is the red fact; subsequent lines render as dim → hints.
+        let hint = match verb {
+            "exec" => format!(
+                "{uid} is a VM — exec is not supported\nconnect over SSH instead: targon workload get {uid}"
+            ),
+            "start" => format!(
+                "{uid} is a VM — start applies only to rentals\nstart it with: targon vm start {uid}"
+            ),
+            _ => format!("{uid} is a VM — {verb} applies only to rentals"),
+        };
+        return Err(CliError::Config(hint));
+    }
+    Ok(workload)
+}
+
+pub(crate) async fn ensure_vm(ctx: &Context, uid: &str, verb: &str) -> Result<Workload> {
+    let workload = ctx.client.workloads().get(uid).await?;
+    if workload.workload_type != "VM" {
+        let workload_type = &workload.workload_type;
+        let hint = match verb {
+            "start" => format!(
+                "{uid} is a {workload_type} — start applies only to VMs\nstart it with: targon rental start {uid}"
+            ),
+            _ => format!("{uid} is a {workload_type} — {verb} applies only to VMs"),
+        };
+        return Err(CliError::Config(hint));
+    }
+    Ok(workload)
 }

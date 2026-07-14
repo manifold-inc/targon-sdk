@@ -6,8 +6,9 @@ use crate::client::http::HttpClient;
 use crate::client::pagination::{List, Page};
 use crate::client::types::{
     AttachVolumeRequest, CreateWorkloadRequest, ListWorkloadsParams, LogOptions,
-    UpdateWorkloadRequest, VerifyWorkloadRequest, VerifyWorkloadResponse, Workload, WorkloadEvent,
-    WorkloadSshKeyAttachment, WorkloadStateResponse, WorkloadSummary, WorkloadVolume,
+    UpdateWorkloadRequest, VerifyWorkloadRequest, VerifyWorkloadResponse, VmImage, Workload,
+    WorkloadEvent, WorkloadSshKeyAttachment, WorkloadStateResponse, WorkloadSummary,
+    WorkloadVolume,
 };
 
 #[derive(Debug, Clone)]
@@ -22,7 +23,9 @@ impl Workloads {
 
     pub async fn list(&self, params: &ListWorkloadsParams) -> Result<List<WorkloadSummary>> {
         let mut query = params.page.query();
-        query.push(("type", "RENTAL".to_string()));
+        if let Some(workload_type) = &params.workload_type {
+            query.push(("type", workload_type.clone()));
+        }
         if let Some(status) = &params.status {
             query.push(("status", status.clone()));
         }
@@ -101,6 +104,10 @@ impl Workloads {
             .await
     }
 
+    pub async fn vm_images(&self) -> Result<Vec<VmImage>> {
+        self.http.get("/workloads/vm-images").await
+    }
+
     pub async fn verify(&self, uid: &str, digest: &str) -> Result<VerifyWorkloadResponse> {
         let req = VerifyWorkloadRequest {
             uid: uid.to_string(),
@@ -153,6 +160,9 @@ fn log_query(opts: &LogOptions, follow: bool) -> Vec<(&'static str, String)> {
     }
     if opts.previous {
         query.push(("previous", "true".to_string()));
+    }
+    if let Some(log_type) = &opts.log_type {
+        query.push(("type", log_type.clone()));
     }
     if follow {
         query.push(("follow", "true".to_string()));

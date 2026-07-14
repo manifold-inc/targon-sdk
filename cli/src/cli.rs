@@ -1,12 +1,21 @@
 use clap::{Parser, Subcommand};
+use clap_complete::Shell;
 
 use crate::commands::auth::AuthCommands;
-use crate::commands::inventory::InventoryArgs;
+use crate::commands::inventory::InventoryCommands;
 use crate::commands::project::ProjectCommands;
+use crate::commands::rental::RentalCommands;
 use crate::commands::ssh_key::SshKeyCommands;
-use crate::commands::user::UserCommands;
+use crate::commands::vm::VmCommands;
 use crate::commands::volume::VolumeCommands;
 use crate::commands::workload::WorkloadCommands;
+
+const VM_ABOUT: &str = "Deploy confidential VMs";
+const VM_LONG_ABOUT: &str = "Deploy confidential VMs
+
+VMs are workloads: manage them with `targon workload <get|delete|logs|...> <UID>`.
+SSH keys are fixed at creation - pass --ssh-key to `vm deploy`; they cannot be
+attached or detached after the VM boots.";
 
 #[derive(Debug, Parser)]
 #[command(
@@ -34,9 +43,15 @@ pub enum Commands {
     /// Manage authentication
     #[command(subcommand)]
     Auth(AuthCommands),
-    /// Manage workloads
+    /// Manage any workload by UID
     #[command(subcommand, alias = "wl")]
     Workload(Box<WorkloadCommands>),
+    /// Deploy container rentals
+    #[command(subcommand)]
+    Rental(Box<RentalCommands>),
+    /// Deploy confidential VMs
+    #[command(subcommand, about = VM_ABOUT, long_about = VM_LONG_ABOUT)]
+    Vm(Box<VmCommands>),
     /// Manage volumes
     #[command(subcommand, alias = "vol")]
     Volume(VolumeCommands),
@@ -47,10 +62,15 @@ pub enum Commands {
     #[command(subcommand, alias = "proj")]
     Project(ProjectCommands),
     /// Browse available inventory
-    Inventory(InventoryArgs),
-    /// Show wallet and credits
     #[command(subcommand)]
-    User(UserCommands),
+    Inventory(InventoryCommands),
+    /// Show wallet, credits, and active profile
+    Whoami,
     /// Show the API version
     Version,
+    /// Generate shell completions
+    Completion {
+        #[arg(value_enum)]
+        shell: Shell,
+    },
 }

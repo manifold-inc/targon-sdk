@@ -9,6 +9,29 @@ use crate::client::pagination::Page;
 pub enum WorkloadType {
     #[default]
     Rental,
+    Vm,
+}
+
+impl WorkloadType {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            WorkloadType::Rental => "RENTAL",
+            WorkloadType::Vm => "VM",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VmConfig {
+    pub password: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VmImage {
+    pub name: String,
+    pub display_name: String,
+    #[serde(default)]
+    pub description: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -187,10 +210,13 @@ pub struct CreateWorkloadRequest {
     pub ssh_keys: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub registry_auth: Option<RegistryAuth>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vm_config: Option<VmConfig>,
 }
 
 impl CreateWorkloadRequest {
     pub fn new(
+        workload_type: WorkloadType,
         name: impl Into<String>,
         image: impl Into<String>,
         resource_name: impl Into<String>,
@@ -199,7 +225,7 @@ impl CreateWorkloadRequest {
             name: name.into(),
             image: image.into(),
             resource_name: resource_name.into(),
-            workload_type: WorkloadType::Rental,
+            workload_type,
             project_id: None,
             app_id: None,
             ports: Vec::new(),
@@ -209,6 +235,7 @@ impl CreateWorkloadRequest {
             volumes: Vec::new(),
             ssh_keys: Vec::new(),
             registry_auth: None,
+            vm_config: None,
         }
     }
 }
@@ -242,6 +269,7 @@ pub struct UpdateWorkloadRequest {
 #[derive(Debug, Clone, Default)]
 pub struct ListWorkloadsParams {
     pub page: Page,
+    pub workload_type: Option<String>,
     pub status: Option<String>,
     pub project_id: Option<String>,
     pub name: Option<String>,
@@ -252,6 +280,7 @@ pub struct LogOptions {
     pub since: Option<String>,
     pub tail: Option<u32>,
     pub previous: bool,
+    pub log_type: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]

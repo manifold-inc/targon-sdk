@@ -1,13 +1,14 @@
 use std::path::{Path, PathBuf};
 
 use clap::Subcommand;
+use colored::Colorize;
 use comfy_table::Cell;
 
 use crate::client::pagination::Page;
 use crate::client::types::CreateSshKeyRequest;
-use crate::commands::Context;
+use crate::commands::{workload, Context};
 use crate::error::{CliError, Result};
-use crate::output::{format, style, table};
+use crate::output::{format, palettes, style, table};
 
 #[derive(Debug, Subcommand)]
 pub enum SshKeyCommands {
@@ -85,13 +86,14 @@ async fn list(ctx: &Context) -> Result<()> {
     let mut t = table::table(&["UID", "NAME", "FINGERPRINT", "CREATED"]);
     for key in &keys.items {
         t.add_row(vec![
-            Cell::new(&key.uid),
+            table::uid_cell(&key.uid),
             Cell::new(&key.name),
             table::dim_cell(fingerprint(&key.public_key)),
             table::dim_cell(format::relative_time(key.created_at)),
         ]);
     }
-    println!("{t}");
+    table::print(&t);
+    table::summary(workload::plural(keys.items.len(), "key"));
     Ok(())
 }
 
@@ -100,7 +102,7 @@ async fn get(ctx: &Context, uid: &str) -> Result<()> {
     if ctx.json() {
         return format::print_json(&key);
     }
-    style::field("UID", &key.uid);
+    style::field("UID", key.uid.color(palettes::ACCENT).to_string());
     style::field("Name", &key.name);
     style::field("Created", format::relative_time(key.created_at));
     println!("{}", key.public_key);

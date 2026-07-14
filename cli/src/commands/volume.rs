@@ -1,11 +1,12 @@
 use clap::Subcommand;
+use colored::Colorize;
 use comfy_table::Cell;
 
 use crate::client::pagination::Page;
 use crate::client::types::CreateVolumeRequest;
-use crate::commands::{self, Context};
+use crate::commands::{self, workload, Context};
 use crate::error::Result;
-use crate::output::{format, prompt, style, table};
+use crate::output::{format, palettes, prompt, style, table};
 
 #[derive(Debug, Subcommand)]
 pub enum VolumeCommands {
@@ -93,10 +94,16 @@ async fn create(
     };
 
     if prompt::is_tty() && !yes {
-        style::field("Name", &name);
-        style::field("Resource", &resource_name);
-        style::field("Size", format!("{size_gib} GiB"));
-        if !prompt::confirm("Create this volume?", true)? {
+        eprintln!();
+        style::summary_box(
+            "volume",
+            &[
+                ("name", name.clone()),
+                ("resource", resource_name.clone()),
+                ("size", format!("{size_gib} GiB")),
+            ],
+        );
+        if !prompt::confirm("Create this volume?", false)? {
             return Err(crate::error::CliError::Cancelled);
         }
     }
@@ -128,14 +135,18 @@ async fn list(ctx: &Context, workload_uid: Option<String>) -> Result<()> {
         return Ok(());
     }
     let mut t = table::table(&["UID", "NAME", "RESOURCE", "SIZE", "STATE", "ATTACHED"]);
+    let mut attached = 0usize;
     for volume in &volumes.items {
         let status = volume
             .state
             .as_ref()
             .map(|s| s.status.to_string())
             .unwrap_or_default();
+        if volume.workload_uid.is_some() {
+            attached += 1;
+        }
         t.add_row(vec![
-            Cell::new(&volume.uid),
+            table::uid_cell(&volume.uid),
             Cell::new(&volume.name),
             Cell::new(&volume.resource_name),
             Cell::new(format::mib_to_human(volume.size)),
@@ -143,7 +154,12 @@ async fn list(ctx: &Context, workload_uid: Option<String>) -> Result<()> {
             table::dim_cell(volume.workload_uid.clone().unwrap_or_else(|| "-".to_string())),
         ]);
     }
-    println!("{t}");
+    table::print(&t);
+    table::summary(format!(
+        "{} {} {attached} attached",
+        workload::plural(volumes.items.len(), "volume"),
+        style::SEP
+    ));
     Ok(())
 }
 
@@ -152,7 +168,7 @@ async fn get(ctx: &Context, uid: &str) -> Result<()> {
     if ctx.json() {
         return format::print_json(&volume);
     }
-    style::field("UID", &volume.uid);
+    style::field("UID", volume.uid.color(palettes::ACCENT).to_string());
     style::field("Name", &volume.name);
     style::field("Resource", &volume.resource_name);
     style::field("Size", format::mib_to_human(volume.size));
@@ -183,7 +199,7 @@ async fn state(ctx: &Context, uid: &str) -> Result<()> {
     if ctx.json() {
         return format::print_json(&state);
     }
-    style::field("UID", &state.uid);
+    style::field("UID", state.uid.color(palettes::ACCENT).to_string());
     style::field("Status", format::state_badge(state.status.as_str()));
     if !state.message.is_empty() {
         style::field("Message", &state.message);
@@ -210,10 +226,11 @@ async fn events(ctx: &Context, uid: &str, limit: u32) -> Result<()> {
         t.add_row(vec![
             table::dim_cell(format::relative_time(event.created_at)),
             Cell::new(&event.event_type),
-            Cell::new(event.new_status.clone().unwrap_or_default()),
+            table::state_cell(&event.new_status.clone().unwrap_or_default()),
             table::dim_cell(event.reason.clone().unwrap_or_default()),
         ]);
     }
-    println!("{t}");
+    table::print(&t);
+    table::summary(workload::plural(events.items.len(), "event"));
     Ok(())
 }

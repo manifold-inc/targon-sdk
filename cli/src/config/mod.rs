@@ -2,4 +2,7 @@
 pub mod config;
 pub mod default;
 
-pub use config::{clear_api_key, load_api_key, resolve, store_api_key, Config, Resolved};
+pub use config::{
+    clear_api_key, ensure_profile, load_api_key, resolve, set_project, store_api_key, Config,
+    Resolved,
+};

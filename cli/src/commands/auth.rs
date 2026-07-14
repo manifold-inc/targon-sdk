@@ -13,6 +13,8 @@ pub enum AuthCommands {
     Logout,
     /// Show authentication status for the active profile
     Status,
+    /// Print the resolved API key (for scripting)
+    Token,
 }
 
 pub async fn handle(
@@ -26,20 +28,31 @@ pub async fn handle(
         .unwrap_or_else(|| config.current.clone());
 
     match cmd {
-        AuthCommands::Login => login(&profile).await,
+        AuthCommands::Login => login(&profile, base_url_override).await,
         AuthCommands::Logout => logout(&profile),
         AuthCommands::Status => status(&config, &profile, base_url_override),
+        AuthCommands::Token => token(&profile),
     }
 }
 
-async fn login(profile: &str) -> Result<()> {
+fn token(profile: &str) -> Result<()> {
+    let key = std::env::var(default::API_KEY_ENV)
+        .ok()
+        .filter(|k| !k.is_empty())
+        .or_else(|| config::load_api_key(profile))
+        .ok_or(CliError::NotAuthenticated)?;
+    println!("{key}");
+    Ok(())
+}
+
+async fn login(profile: &str, base_url_override: Option<&str>) -> Result<()> {
     prompt::require_tty("api-key")?;
     let key = prompt::password("API key")?;
     let key = key.trim();
     if key.is_empty() {
         return Err(CliError::Config("api key cannot be empty".to_string()));
     }
-    config::store_api_key(profile, key)?;
+    config::store_api_key(profile, key, base_url_override)?;
     style::success(format!("stored credentials for profile '{profile}'"));
     Ok(())
 }
