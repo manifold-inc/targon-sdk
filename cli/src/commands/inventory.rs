@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::io::IsTerminal;
 
-use clap::Subcommand;
+use clap::{Args, Subcommand};
 use colored::Colorize;
 
 use crate::client::types::{Inventory, InventoryFilter};
@@ -20,32 +20,31 @@ const COL_MEMORY: usize = 8;
 const COL_PRICE: usize = 10;
 const COL_AVAIL: usize = 5;
 
+#[derive(Debug, Args)]
+pub struct InventoryArgs {
+    /// Filter by offering type: rental, vm, storage
+    #[arg(long = "type", value_name = "TYPE", global = true)]
+    pub resource_type: Option<String>,
+    /// Only show GPU resources
+    #[arg(long, global = true)]
+    pub gpu: bool,
+    /// Hide sold-out SKUs
+    #[arg(long, global = true)]
+    pub available: bool,
+    #[command(subcommand)]
+    pub command: Option<InventoryCommands>,
+}
+
 #[derive(Debug, Subcommand)]
 pub enum InventoryCommands {
-    /// List available inventory
-    List {
-        /// Filter by offering type: rental, vm, storage
-        #[arg(long = "type", value_name = "TYPE")]
-        resource_type: Option<String>,
-        /// Only show GPU resources
-        #[arg(long)]
-        gpu: bool,
-        /// Hide sold-out SKUs
-        #[arg(long)]
-        available: bool,
-    },
     /// Show one SKU
     Get { sku: String },
 }
 
-pub async fn handle(ctx: &Context, cmd: &InventoryCommands) -> Result<()> {
-    match cmd {
-        InventoryCommands::List {
-            resource_type,
-            gpu,
-            available,
-        } => list(ctx, resource_type.clone(), *gpu, *available).await,
-        InventoryCommands::Get { sku } => get(ctx, sku).await,
+pub async fn handle(ctx: &Context, args: &InventoryArgs) -> Result<()> {
+    match &args.command {
+        None => list(ctx, args.resource_type.clone(), args.gpu, args.available).await,
+        Some(InventoryCommands::Get { sku }) => get(ctx, sku).await,
     }
 }
 

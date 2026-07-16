@@ -2,7 +2,7 @@ use clap::{Parser, Subcommand};
 use clap_complete::Shell;
 
 use crate::commands::auth::AuthCommands;
-use crate::commands::inventory::InventoryCommands;
+use crate::commands::inventory::InventoryArgs;
 use crate::commands::project::ProjectCommands;
 use crate::commands::rental::RentalCommands;
 use crate::commands::ssh_key::SshKeyCommands;
@@ -62,8 +62,7 @@ pub enum Commands {
     #[command(subcommand, alias = "proj")]
     Project(ProjectCommands),
     /// Browse available inventory
-    #[command(subcommand)]
-    Inventory(InventoryCommands),
+    Inventory(InventoryArgs),
     /// Show wallet, credits, and active profile
     Whoami,
     /// Show the API version

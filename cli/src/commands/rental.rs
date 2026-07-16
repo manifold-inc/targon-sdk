@@ -20,7 +20,7 @@ pub struct RentalSpec {
     /// Container image reference
     #[arg(long)]
     pub image: Option<String>,
-    /// Resource SKU (see `targon inventory list`)
+    /// Resource SKU (see `targon inventory`)
     #[arg(long)]
     pub resource: Option<String>,
     /// Environment variable (repeatable)

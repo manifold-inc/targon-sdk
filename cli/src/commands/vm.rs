@@ -16,7 +16,7 @@ pub struct VmSpec {
     /// Image from the catalog (see `targon vm images`)
     #[arg(long)]
     pub image: Option<String>,
-    /// Resource SKU (see `targon inventory list`)
+    /// Resource SKU (see `targon inventory`)
     #[arg(long)]
     pub resource: Option<String>,
     /// SSH key (repeatable; cannot be changed after boot)
