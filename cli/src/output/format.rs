@@ -128,8 +128,17 @@ pub fn short_uid(uid: &str) -> String {
 }
 
 pub fn mib_to_human(mib: u64) -> String {
-    if mib >= 1024 {
+    if mib >= 1024 * 1024 {
+        let tib = mib as f64 / (1024.0 * 1024.0);
+        if (tib - tib.round()).abs() < 0.05 {
+            format!("{:.0} TiB", tib)
+        } else {
+            format!("{tib:.1} TiB")
+        }
+    } else if mib >= 1024 {
         format!("{:.0} GiB", mib as f64 / 1024.0)
+    } else if mib == 0 {
+        "–".to_string()
     } else {
         format!("{mib} MiB")
     }
@@ -139,6 +148,26 @@ pub fn gpu_spec(gpu_type: Option<&str>, count: u32) -> String {
     match gpu_type {
         Some(t) if !t.is_empty() && count > 0 => format!("{count}x {t}"),
         Some(t) if !t.is_empty() => t.to_string(),
-        _ => "-".to_string(),
+        _ => "–".to_string(),
+    }
+}
+
+/// GPU count only (family is in the group header), e.g. `1×` / `8×` / `–`.
+pub fn gpu_count(count: u32) -> String {
+    if count == 0 {
+        "–".to_string()
+    } else {
+        format!("{count}×")
+    }
+}
+
+/// Canonical inventory TYPE label for display.
+pub fn inventory_type_label(resource_type: &str) -> String {
+    match resource_type.to_ascii_lowercase().as_str() {
+        "vm" => "VM".to_string(),
+        "rental" => "RENTAL".to_string(),
+        "serverless" | "srvless" => "SRVLESS".to_string(),
+        "storage" | "volume" => "STORAGE".to_string(),
+        other => other.to_ascii_uppercase(),
     }
 }
