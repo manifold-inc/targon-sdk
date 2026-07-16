@@ -2,7 +2,7 @@ use std::io::IsTerminal;
 
 use dialoguer::console::{style, Style};
 use dialoguer::theme::ColorfulTheme;
-use dialoguer::{Confirm, Input, Password, Select};
+use dialoguer::{Confirm, Input, MultiSelect, Password, Select};
 
 use crate::error::{CliError, Result};
 
@@ -90,6 +90,14 @@ pub fn select(prompt: &str, items: &[String]) -> Result<usize> {
         .with_prompt(prompt)
         .items(items)
         .default(0)
+        .interact()
+        .map_err(map_err)
+}
+
+pub fn multi_select(prompt: &str, items: &[String]) -> Result<Vec<usize>> {
+    MultiSelect::with_theme(&theme())
+        .with_prompt(prompt)
+        .items(items)
         .interact()
         .map_err(map_err)
 }

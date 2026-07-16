@@ -9,10 +9,11 @@ pub mod volume;
 pub mod whoami;
 pub mod workload;
 
+use crate::client::pagination::Page;
 use crate::client::types::{Inventory, InventoryFilter, Workload};
 use crate::client::Client;
 use crate::error::{CliError, Result};
-use crate::output::{format, prompt, OutputFormat};
+use crate::output::{format, prompt, style, OutputFormat};
 
 pub struct Context {
     pub client: Client,
@@ -110,6 +111,26 @@ pub(crate) fn prompt_list(label: &str) -> Result<Vec<String>> {
                 .collect()
         })
         .unwrap_or_default())
+}
+
+/// Multi-select registered SSH keys for VM deploy/create. Returns an empty
+/// list when the account has no keys (password login still works).
+pub async fn select_ssh_keys(ctx: &Context) -> Result<Vec<String>> {
+    let keys = ctx.client.ssh_keys().list(&Page::default()).await?;
+    if keys.items.is_empty() {
+        style::dim("no ssh keys registered — continuing without (add with: targon key add)");
+        return Ok(vec![]);
+    }
+    let labels: Vec<String> = keys
+        .items
+        .iter()
+        .map(|k| format!("{:<24} {}", k.name, format::short_uid(&k.uid)))
+        .collect();
+    let selected = prompt::multi_select("SSH keys (space to toggle, enter to confirm)", &labels)?;
+    Ok(selected
+        .into_iter()
+        .filter_map(|i| keys.items.get(i).map(|k| k.uid.clone()))
+        .collect())
 }
 
 pub(crate) async fn ensure_rental(ctx: &Context, uid: &str, verb: &str) -> Result<Workload> {

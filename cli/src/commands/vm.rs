@@ -195,10 +195,17 @@ async fn build_request(
     } else {
         spec.port
     };
+    let ssh_keys = if !spec.ssh_key.is_empty() {
+        spec.ssh_key
+    } else if prompt::is_tty() {
+        commands::select_ssh_keys(ctx).await?
+    } else {
+        vec![]
+    };
 
     let mut req = CreateWorkloadRequest::new(WorkloadType::Vm, name, image, resource_name);
     req.project_id = ctx.project(spec.project);
-    req.ssh_keys = spec.ssh_key;
+    req.ssh_keys = ssh_keys;
     for raw in &ports {
         req.ports.push(workload::parse_port(raw)?);
     }
@@ -227,7 +234,7 @@ async fn build_request(
             rows.push(("ports", ports));
         }
         if !req.ssh_keys.is_empty() {
-            rows.push(("ssh keys", req.ssh_keys.len().to_string()));
+            rows.push(("ssh keys", req.ssh_keys.join(", ")));
         }
         eprintln!();
         style::summary_box("vm", &rows);
