@@ -1,52 +1,38 @@
-# Makefile for Targon SDK development
-.PHONY: install install-dev build proto test test-cov format lint type-check check clean clean-proto
+# root Makefile
+PACKAGES := cli libs/python libs/typescript libs/go
+TARGETS  := build test lint fmt clean
+PYTHON_PKG := libs/python
 
-install:
-	pip install -e .
+.DEFAULT_GOAL := help
+.PHONY: help install install-dev $(TARGETS) $(PACKAGES)
 
-build:
-	pip install -U build wheel
-	python -m build
+help:
+	@echo "Usage: make <target>"
+	@echo ""
+	@echo "Targets (run across all packages):"
+	@echo "  build        Build every package"
+	@echo "  test         Test every package"
+	@echo "  lint         Lint every package"
+	@echo "  fmt          Format every package"
+	@echo "  clean        Remove build artifacts"
+	@echo ""
+	@echo "Python-only targets:"
+	@echo "  install      Editable install of the Python SDK ($(PYTHON_PKG))"
+	@echo "  install-dev  Editable install with dev extras ($(PYTHON_PKG))"
+	@echo ""
+	@echo "Packages: $(PACKAGES)"
+	@echo "Run 'make <package>' to build a single package."
 
-proto:
-	@echo "Compiling protocol buffers."
-	cd src/targon/proto && \
-	python -m grpc_tools.protoc \
-		-I. \
-		--python_out=. \
-		--grpc_python_out=. \
-		--pyi_out=. \
-		function_execution.proto
-	@echo "Fixing imports in generated files."
-	sed -i '' 's/^import function_execution_pb2/from . import function_execution_pb2/' src/targon/proto/function_execution_pb2_grpc.py
-	@echo "Proto compilation complete."
+$(TARGETS):
+	@for pkg in $(PACKAGES); do \
+		printf '\n==> make %s (%s)\n' "$@" "$$pkg"; \
+		$(MAKE) -C $$pkg $@ || exit 1; \
+	done
 
-test-cov:
-	python -m pytest tests/ --cov=src/targon --cov-report=html --cov-report=term
+# Python-specific install targets (only the Python lib is pip-installable).
+install install-dev:
+	$(MAKE) -C $(PYTHON_PKG) $@
 
-format: 
-	black src/ 
-
-lint: 
-	flake8 src/
-
-type-check: 
-	mypy src/
-
-check: format lint type-check test 
-
-clean: 
-	@echo "Cleaning generated files."
-	rm -rf build/
-	rm -rf dist/
-	rm -rf *.egg-info/
-	rm -rf .pytest_cache/
-	rm -rf .mypy_cache/
-	rm -rf htmlcov/
-	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
-	find . -type f -name "*.pyc" -delete
-	@echo "Cleaning complete."
-
-clean-proto:
-	rm -f src/targon/proto/*_pb2.py src/targon/proto/*_pb2_grpc.py src/targon/proto/*_pb2.pyi
-
+# Run any target against a single package, e.g. `make cli` runs `build` in cli.
+$(PACKAGES):
+	$(MAKE) -C $@ build
