@@ -65,7 +65,7 @@ pub enum Commands {
     Inventory(InventoryArgs),
     /// Show wallet, credits, and active profile
     Whoami,
-    /// Show the API version
+    /// Show CLI and API versions
     Version,
     /// Generate shell completions
     Completion {
