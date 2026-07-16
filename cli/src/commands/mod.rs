@@ -49,14 +49,17 @@ impl Context {
 }
 
 pub async fn select_resource(ctx: &Context, resource_type: &str) -> Result<String> {
-    let items = ctx
+    let items: Vec<_> = ctx
         .client
         .inventory()
         .list(&InventoryFilter {
             resource_type: Some(resource_type.to_string()),
             ..Default::default()
         })
-        .await?;
+        .await?
+        .into_iter()
+        .filter(|i| i.available > 0)
+        .collect();
     if items.is_empty() {
         return Err(CliError::Config(
             "no inventory available to select".to_string(),
