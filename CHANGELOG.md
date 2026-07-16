@@ -5,7 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+Component releases use prefixed tags (`cli/vX.Y.Z`, `python/vX.Y.Z`, …).
+
 ## [Unreleased]
+
+## [cli/2.1.2] - 2026-07-15
+Standalone Rust CLI release (`targon` binary). Install via Homebrew (`brew tap manifold-inc/tap && brew install targon`) or build from `cli/`.
 
 ## [1.0.0] - 2026-04-18
 ### Added
