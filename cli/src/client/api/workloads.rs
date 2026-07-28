@@ -7,21 +7,28 @@ use crate::client::pagination::{List, Page};
 use crate::client::types::{
     AttachVolumeRequest, CreateWorkloadRequest, ListWorkloadsParams, LogOptions,
     UpdateWorkloadRequest, VerifyWorkloadRequest, VerifyWorkloadResponse, VmImage, Workload,
-    WorkloadEvent, WorkloadSshKeyAttachment, WorkloadStateResponse, WorkloadSummary,
+    WorkloadEvent, WorkloadOperationResponse, WorkloadSshKeyAttachment, WorkloadStateResponse,
     WorkloadVolume,
 };
 
 #[derive(Debug, Clone)]
 pub struct Workloads {
     http: HttpClient,
+    base_path: String,
 }
 
 impl Workloads {
-    pub(crate) fn new(http: HttpClient) -> Self {
-        Self { http }
+    pub(crate) fn new(http: HttpClient, org: impl Into<String>) -> Self {
+        Self {
+            http,
+            base_path: format!("/orgs/{}/workloads", org.into()),
+        }
     }
 
-    pub async fn list(&self, params: &ListWorkloadsParams) -> Result<List<WorkloadSummary>> {
+    pub async fn list(
+        &self,
+        params: &ListWorkloadsParams,
+    ) -> Result<List<WorkloadOperationResponse>> {
         let mut query = params.page.query();
         if let Some(workload_type) = &params.workload_type {
             query.push(("type", workload_type.clone()));
@@ -35,50 +42,63 @@ impl Workloads {
         if let Some(name) = &params.name {
             query.push(("name", name.clone()));
         }
-        self.http.get_query("/workloads", &query).await
+        self.http.get_query(&self.base_path, &query).await
     }
 
     pub async fn get(&self, uid: &str) -> Result<Workload> {
-        self.http.get(&format!("/workloads/{uid}")).await
+        self.http.get(&format!("{}/{uid}", self.base_path)).await
     }
 
     pub async fn create(&self, req: &CreateWorkloadRequest) -> Result<Workload> {
-        self.http.post("/workloads", req).await
+        self.http.post(&self.base_path, req).await
     }
 
     pub async fn update(&self, uid: &str, req: &UpdateWorkloadRequest) -> Result<Workload> {
-        self.http.patch(&format!("/workloads/{uid}"), req).await
+        self.http
+            .patch(&format!("{}/{uid}", self.base_path), req)
+            .await
     }
 
     pub async fn delete(&self, uid: &str) -> Result<()> {
-        self.http.delete(&format!("/workloads/{uid}")).await
+        self.http.delete(&format!("{}/{uid}", self.base_path)).await
     }
 
-    pub async fn deploy(&self, uid: &str) -> Result<WorkloadSummary> {
-        self.http.post_empty(&format!("/workloads/{uid}/deploy")).await
+    pub async fn deploy(&self, uid: &str) -> Result<WorkloadOperationResponse> {
+        self.http
+            .post_empty(&format!("{}/{uid}/deploy", self.base_path))
+            .await
     }
 
-    pub async fn suspend(&self, uid: &str) -> Result<WorkloadSummary> {
-        self.http.post_empty(&format!("/workloads/{uid}/suspend")).await
+    pub async fn suspend(&self, uid: &str) -> Result<WorkloadOperationResponse> {
+        self.http
+            .post_empty(&format!("{}/{uid}/suspend", self.base_path))
+            .await
     }
 
-    pub async fn reboot(&self, uid: &str) -> Result<WorkloadSummary> {
-        self.http.post_empty(&format!("/workloads/{uid}/reboot")).await
+    pub async fn reboot(&self, uid: &str) -> Result<WorkloadOperationResponse> {
+        self.http
+            .post_empty(&format!("{}/{uid}/reboot", self.base_path))
+            .await
     }
 
     pub async fn state(&self, uid: &str) -> Result<WorkloadStateResponse> {
-        self.http.get(&format!("/workloads/{uid}/state")).await
+        self.http
+            .get(&format!("{}/{uid}/state", self.base_path))
+            .await
     }
 
     pub async fn events(&self, uid: &str, page: &Page) -> Result<List<WorkloadEvent>> {
         self.http
-            .get_query(&format!("/workloads/{uid}/events"), &page.query())
+            .get_query(&format!("{}/{uid}/events", self.base_path), &page.query())
             .await
     }
 
     pub async fn logs(&self, uid: &str, opts: &LogOptions) -> Result<String> {
         self.http
-            .get_text(&format!("/workloads/{uid}/logs"), &log_query(opts, false))
+            .get_text(
+                &format!("{}/{uid}/logs", self.base_path),
+                &log_query(opts, false),
+            )
             .await
     }
 
@@ -88,7 +108,10 @@ impl Workloads {
         opts: &LogOptions,
     ) -> Result<impl Stream<Item = reqwest::Result<Bytes>>> {
         self.http
-            .stream(&format!("/workloads/{uid}/logs"), &log_query(opts, true))
+            .stream(
+                &format!("{}/{uid}/logs", self.base_path),
+                &log_query(opts, true),
+            )
             .await
     }
 
@@ -100,20 +123,20 @@ impl Workloads {
         let query: Vec<(&str, String)> =
             command.iter().map(|arg| ("command", arg.clone())).collect();
         self.http
-            .post_stream(&format!("/workloads/{uid}/exec"), &query)
+            .post_stream(&format!("{}/{uid}/exec", self.base_path), &query)
             .await
     }
 
     pub async fn vm_images(&self) -> Result<Vec<VmImage>> {
-        self.http.get("/workloads/vm-images").await
+        self.http
+            .get(&format!("{}/vm-images", self.base_path))
+            .await
     }
 
-    pub async fn verify(&self, uid: &str, digest: &str) -> Result<VerifyWorkloadResponse> {
-        let req = VerifyWorkloadRequest {
-            uid: uid.to_string(),
-            digest: digest.to_string(),
-        };
-        self.http.post("/workloads/verify", &req).await
+    pub async fn verify(&self, req: &VerifyWorkloadRequest) -> Result<VerifyWorkloadResponse> {
+        self.http
+            .post(&format!("{}/verify", self.base_path), req)
+            .await
     }
 
     pub async fn attach_volume(
@@ -123,13 +146,16 @@ impl Workloads {
         req: &AttachVolumeRequest,
     ) -> Result<WorkloadVolume> {
         self.http
-            .put(&format!("/workloads/{uid}/volumes/{volume_uid}"), req)
+            .put(
+                &format!("{}/{uid}/volumes/{volume_uid}", self.base_path),
+                req,
+            )
             .await
     }
 
     pub async fn detach_volume(&self, uid: &str, volume_uid: &str) -> Result<()> {
         self.http
-            .delete(&format!("/workloads/{uid}/volumes/{volume_uid}"))
+            .delete(&format!("{}/{uid}/volumes/{volume_uid}", self.base_path))
             .await
     }
 
@@ -139,13 +165,13 @@ impl Workloads {
         ssh_key_uid: &str,
     ) -> Result<WorkloadSshKeyAttachment> {
         self.http
-            .put_empty(&format!("/workloads/{uid}/ssh-keys/{ssh_key_uid}"))
+            .put_empty(&format!("{}/{uid}/ssh-keys/{ssh_key_uid}", self.base_path))
             .await
     }
 
     pub async fn detach_ssh_key(&self, uid: &str, ssh_key_uid: &str) -> Result<()> {
         self.http
-            .delete(&format!("/workloads/{uid}/ssh-keys/{ssh_key_uid}"))
+            .delete(&format!("{}/{uid}/ssh-keys/{ssh_key_uid}", self.base_path))
             .await
     }
 }
