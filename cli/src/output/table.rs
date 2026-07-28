@@ -94,7 +94,7 @@ pub fn org_type_cell(org_type: &str) -> Cell {
 /// Active organization marker shown in its own narrow column.
 pub fn active_org_cell(active: bool) -> Cell {
     if active {
-        colored_cell("▸".to_string(), palettes::ACCENT)
+        colored_cell("➜".to_string(), palettes::SUCCESS)
     } else {
         Cell::new("")
     }
