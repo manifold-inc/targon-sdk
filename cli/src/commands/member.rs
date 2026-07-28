@@ -177,7 +177,18 @@ async fn remove(ctx: &Context, username: &str, yes: bool) -> Result<()> {
 }
 
 fn full_name(member: &Membership) -> String {
-    format!("{} {}", member.user.first_name, member.user.last_name)
-        .trim()
-        .to_string()
+    let name = [
+        member.user.first_name.as_deref(),
+        member.user.last_name.as_deref(),
+    ]
+    .into_iter()
+    .flatten()
+    .filter(|part| !part.trim().is_empty())
+    .collect::<Vec<_>>()
+    .join(" ");
+    if name.is_empty() {
+        member.user.username.clone()
+    } else {
+        name
+    }
 }

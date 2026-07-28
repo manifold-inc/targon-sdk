@@ -73,20 +73,17 @@ impl MembershipStatus {
 pub struct MembershipUser {
     pub username: String,
     pub email: String,
-    pub first_name: String,
-    pub last_name: String,
+    pub first_name: Option<String>,
+    pub last_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Membership {
     pub uid: String,
     pub user: MembershipUser,
-    #[serde(default)]
-    pub invited_by_user: Option<MembershipUser>,
+    pub invited_by_user: MembershipUser,
     pub role: OrgRole,
     pub status: MembershipStatus,
-    #[serde(default)]
-    pub invited_at: Option<DateTime<Utc>>,
     #[serde(default)]
     pub joined_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
