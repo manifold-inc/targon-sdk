@@ -86,7 +86,7 @@ pub fn type_cell(workload_type: &str) -> Cell {
 /// Team organizations are bright cyan; the personal organization is dim.
 pub fn org_type_cell(org_type: &str) -> Cell {
     colored_cell(
-        org_type.to_ascii_lowercase(),
+        org_type.to_ascii_uppercase(),
         palettes::org_type_color(org_type),
     )
 }
