@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 pub const DEFAULT_BASE_URL: &str = "https://api.targon.com";
-pub const API_VERSION: &str = "/tha/v2";
+pub const API_VERSION: &str = "/tha/v3";
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[derive(Debug, Clone)]
@@ -21,6 +21,11 @@ impl ClientConfig {
     }
 
     pub fn url(&self, path: &str) -> String {
-        format!("{}{}{}", self.base_url.trim_end_matches('/'), API_VERSION, path)
+        format!(
+            "{}{}{}",
+            self.base_url.trim_end_matches('/'),
+            API_VERSION,
+            path
+        )
     }
 }
