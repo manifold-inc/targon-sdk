@@ -26,6 +26,8 @@ pub struct Volume {
     #[serde(default)]
     pub last_backup_at: Option<DateTime<Utc>>,
     #[serde(default)]
+    pub deleted_by: Option<String>,
+    #[serde(default)]
     pub state: Option<VolumeState>,
     #[serde(default)]
     pub workload_uid: Option<String>,
@@ -56,6 +58,16 @@ pub struct VolumeEvent {
     pub volume_uid: String,
     pub event_type: String,
     #[serde(default)]
+    pub billing_processed_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub billing_status: Option<String>,
+    #[serde(default)]
+    pub cost_per_second: Option<i64>,
+    #[serde(default)]
+    pub k8s_resource_version: Option<String>,
+    #[serde(default)]
+    pub namespace: Option<String>,
+    #[serde(default)]
     pub old_status: Option<String>,
     #[serde(default)]
     pub new_status: Option<String>,
@@ -67,6 +79,8 @@ pub struct VolumeEvent {
     pub pvc_name: Option<String>,
     #[serde(default)]
     pub requested_size: Option<String>,
+    #[serde(default)]
+    pub storage_class: Option<String>,
     pub created_at: DateTime<Utc>,
 }
 
