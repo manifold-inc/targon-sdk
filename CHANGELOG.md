@@ -9,6 +9,21 @@ Component releases use prefixed tags (`cli/vX.Y.Z`, `python/vX.Y.Z`, …).
 
 ## [Unreleased]
 
+## [cli/3.0.0] - 2026-07-27
+### Added
+- Added explicit organization context through `--org`, `TARGON_ORG`, and `targon org use`, with per-organization default projects.
+- Added organization and member management commands.
+- Added personal API token and organization service token commands.
+- Added SSH key and volume update commands, workload digest verification, and cursor pagination options.
+
+### Changed
+- Migrated the Rust CLI from `/tha/v2` to the organization-scoped `/tha/v3` API.
+- Moved wallet and credit reporting to the selected organization and included organization context in `whoami` and `auth status`.
+- Renamed the workload list filter to `--status`; `--state` remains available as a compatibility alias.
+
+### Removed
+- Removed v2 personal API-key rotation and unscoped `app_id` assumptions.
+
 ## [cli/2.1.2] - 2026-07-15
 Standalone Rust CLI release (`targon` binary). Install via Homebrew (`brew tap manifold-inc/tap && brew install targon`) or build from `cli/`.
 
