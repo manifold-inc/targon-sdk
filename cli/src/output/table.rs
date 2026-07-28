@@ -119,6 +119,16 @@ pub fn org_role_cell(role: &str) -> Cell {
     colored_cell(role.to_ascii_lowercase(), color)
 }
 
+/// Member list roles carry permission-rank color weight.
+pub fn member_role_cell(role: &str) -> Cell {
+    let color = match role.to_ascii_uppercase().as_str() {
+        "OWNER" => palettes::WARN,
+        "ADMIN" => palettes::ACCENT,
+        _ => palettes::DIM,
+    };
+    colored_cell(role.to_ascii_lowercase(), color)
+}
+
 /// Organization credits are returned by the API as USD.
 pub fn org_credits_cell(credits: f64) -> Cell {
     let color = if credits <= 0.0 {

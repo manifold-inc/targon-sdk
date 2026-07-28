@@ -94,9 +94,10 @@ async fn list(
     limit: u32,
     cursor: Option<String>,
 ) -> Result<()> {
+    let org = ctx.org()?;
     let members = ctx
         .client
-        .members(ctx.org()?)
+        .members(org)
         .list(&ListMembersParams {
             page: Page {
                 limit: Some(limit),
@@ -109,6 +110,7 @@ async fn list(
     if ctx.json() {
         return format::print_json(&members);
     }
+    style::context("Org", org);
     if members.items.is_empty() {
         style::dim("no members");
         return Ok(());
@@ -119,7 +121,7 @@ async fn list(
             Cell::new(&member.user.username),
             Cell::new(full_name(member)),
             Cell::new(&member.user.email),
-            Cell::new(member.role.as_str()),
+            table::member_role_cell(member.role.as_str()),
             table::state_cell(member.status.as_str()),
         ]);
     }
