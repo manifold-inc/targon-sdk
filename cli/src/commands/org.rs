@@ -81,23 +81,38 @@ async fn list(ctx: &Context, limit: u32, cursor: Option<String>) -> Result<()> {
         style::dim("no organizations");
         return Ok(());
     }
-    let mut output = table::table(&["SLUG", "NAME", "TYPE", "CREDITS", "CREATED"]);
+    let mut output = table::table(&["", "SLUG", "NAME", "TYPE", "ROLE", "CREDITS", "CREATED"]);
     for org in &orgs.items {
-        let marker = if ctx.org.as_deref() == Some(org.slug.as_str()) {
-            "*"
-        } else {
-            ""
-        };
+        let active = ctx.org.as_deref() == Some(org.slug.as_str());
         output.add_row(vec![
-            Cell::new(format!("{marker}{}", org.slug)),
+            table::active_org_cell(active),
+            table::org_slug_cell(&org.slug, active),
             Cell::new(&org.name),
-            table::dim_cell(&org.org_type),
-            Cell::new(org.credits),
+            table::org_type_cell(&org.org_type),
+            table::org_role_cell(org.role.as_str()),
+            table::org_credits_cell(org.credits),
             table::dim_cell(format::relative_time(org.created_at)),
         ]);
     }
     table::print(&output);
-    table::summary(workload::plural(orgs.items.len(), "organization"));
+    let marker = "▸".color(palettes::ACCENT).to_string();
+    let mut summary = format!(
+        "{} {} {marker} = active",
+        workload::plural(orgs.items.len(), "organization"),
+        style::SEP
+    );
+    if let Some(target) = orgs
+        .items
+        .iter()
+        .find(|org| ctx.org.as_deref() != Some(org.slug.as_str()))
+    {
+        summary.push_str(&format!(
+            " {} targon org use {} to switch",
+            style::SEP,
+            target.slug
+        ));
+    }
+    table::summary(summary);
     Ok(())
 }
 
@@ -214,10 +229,11 @@ fn print_org(ctx: &Context, org: &Org) -> Result<()> {
     style::field("Slug", &org.slug);
     style::field("Name", &org.name);
     style::field("Type", &org.org_type);
+    style::field("Role", org.role.as_str().to_ascii_lowercase());
     if !org.billing_email.is_empty() {
         style::field("Billing email", &org.billing_email);
     }
-    style::field("Credits", org.credits.to_string());
+    style::field("Credits", format::credits_badge(org.credits, "USD"));
     style::field("Overage", org.overage.to_string());
     style::field("Created", format::relative_time(org.created_at));
     Ok(())

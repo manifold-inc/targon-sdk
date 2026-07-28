@@ -28,6 +28,15 @@ pub fn workload_type_color(workload_type: &str) -> Color {
     }
 }
 
+/// Team organizations are emphasized; the single personal org recedes.
+pub fn org_type_color(org_type: &str) -> Color {
+    match org_type.to_ascii_uppercase().as_str() {
+        "TEAM" => ACCENT,
+        "PERSONAL" => DIM,
+        _ => DIM,
+    }
+}
+
 /// Whether colored output is currently enabled (respects NO_COLOR and TTY
 /// detection via the `colored` crate). Used to gate comfy-table cell colors,
 /// which would otherwise emit ANSI codes unconditionally.

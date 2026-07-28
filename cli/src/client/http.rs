@@ -22,6 +22,7 @@ impl HttpClient {
         auth.set_sensitive(true);
         headers.insert(AUTHORIZATION, auth);
         headers.insert(ACCEPT, HeaderValue::from_static("application/json"));
+        headers.insert("X-Deployment-Type", HeaderValue::from_static("shadow"));
 
         let inner = Client::builder()
             .default_headers(headers)
