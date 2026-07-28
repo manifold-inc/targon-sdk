@@ -21,6 +21,7 @@ pub async fn handle(
     cmd: &AuthCommands,
     profile_override: Option<&str>,
     base_url_override: Option<&str>,
+    org_override: Option<&str>,
 ) -> Result<()> {
     let config = Config::load()?;
     let profile = profile_override
@@ -30,7 +31,7 @@ pub async fn handle(
     match cmd {
         AuthCommands::Login => login(&profile, base_url_override).await,
         AuthCommands::Logout => logout(&profile),
-        AuthCommands::Status => status(&config, &profile, base_url_override),
+        AuthCommands::Status => status(&config, &profile, base_url_override, org_override),
         AuthCommands::Token => token(&profile),
     }
 }
@@ -63,7 +64,12 @@ fn logout(profile: &str) -> Result<()> {
     Ok(())
 }
 
-fn status(config: &Config, profile: &str, base_url_override: Option<&str>) -> Result<()> {
+fn status(
+    config: &Config,
+    profile: &str,
+    base_url_override: Option<&str>,
+    org_override: Option<&str>,
+) -> Result<()> {
     let base_url = base_url_override
         .map(str::to_string)
         .or_else(|| config.profile(profile).ok().map(|p| p.base_url.clone()))
@@ -71,10 +77,22 @@ fn status(config: &Config, profile: &str, base_url_override: Option<&str>) -> Re
 
     style::field("Profile", profile);
     style::field("Base URL", &base_url);
+    let org = org_override
+        .map(str::to_string)
+        .or_else(|| {
+            std::env::var(default::ORG_ENV)
+                .ok()
+                .filter(|org| !org.is_empty())
+        })
+        .or_else(|| config.profile(profile).ok().and_then(|p| p.org.clone()));
+    style::field("Organization", org.as_deref().unwrap_or("not set"));
 
     if let Ok(key) = std::env::var(default::API_KEY_ENV) {
         if !key.is_empty() {
-            style::field("API key", format!("{} (via {})", mask(&key), default::API_KEY_ENV));
+            style::field(
+                "API key",
+                format!("{} (via {})", mask(&key), default::API_KEY_ENV),
+            );
             return Ok(());
         }
     }

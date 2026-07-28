@@ -46,7 +46,10 @@ pub fn spinner_if(enabled: bool, msg: impl Into<String>) -> Spinner {
     if enabled {
         bar.enable_steady_tick(Duration::from_millis(TICK_MS));
     }
-    Spinner { bar, quiet: !enabled }
+    Spinner {
+        bar,
+        quiet: !enabled,
+    }
 }
 
 impl Spinner {
@@ -118,9 +121,7 @@ impl Checklist {
         bar.set_style(
             ProgressStyle::with_template("  {spinner} {msg}")
                 .unwrap()
-                .tick_strings(
-                    &ticks().iter().map(String::as_str).collect::<Vec<_>>(),
-                ),
+                .tick_strings(&ticks().iter().map(String::as_str).collect::<Vec<_>>()),
         );
         bar.set_message(active_line(&self.labels[idx], detail));
         bar.enable_steady_tick(Duration::from_millis(TICK_MS));

@@ -32,7 +32,8 @@ pub fn table(headers: &[&str]) -> Table {
     table.set_header(headers.iter().map(|h| {
         let cell = Cell::new(h.to_uppercase());
         if palettes::colors_enabled() {
-            cell.fg(rgb(palettes::HEADER)).add_attribute(Attribute::Bold)
+            cell.fg(rgb(palettes::HEADER))
+                .add_attribute(Attribute::Bold)
         } else {
             cell
         }

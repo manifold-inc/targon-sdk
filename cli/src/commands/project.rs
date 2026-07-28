@@ -11,15 +11,16 @@ use crate::output::{format, palettes, style, table};
 #[derive(Debug, Subcommand)]
 pub enum ProjectCommands {
     /// List projects
-    List,
+    List {
+        #[arg(long, default_value_t = 50)]
+        limit: u32,
+        #[arg(long)]
+        cursor: Option<String>,
+    },
     /// Show a project
-    Get {
-        uid: String,
-    },
+    Get { uid: String },
     /// Create a project
-    Create {
-        name: String,
-    },
+    Create { name: String },
     /// Rename a project
     Update {
         uid: String,
@@ -27,18 +28,14 @@ pub enum ProjectCommands {
         name: String,
     },
     /// Delete a project
-    Delete {
-        uid: String,
-    },
+    Delete { uid: String },
     /// Set the active project for this profile
-    Use {
-        uid: String,
-    },
+    Use { uid: String },
 }
 
 pub async fn handle(ctx: &Context, cmd: &ProjectCommands) -> Result<()> {
     match cmd {
-        ProjectCommands::List => list(ctx).await,
+        ProjectCommands::List { limit, cursor } => list(ctx, *limit, cursor.clone()).await,
         ProjectCommands::Get { uid } => get(ctx, uid).await,
         ProjectCommands::Create { name } => create(ctx, name).await,
         ProjectCommands::Update { uid, name } => update(ctx, uid, name).await,
@@ -48,8 +45,9 @@ pub async fn handle(ctx: &Context, cmd: &ProjectCommands) -> Result<()> {
 }
 
 async fn set_active(ctx: &Context, uid: &str) -> Result<()> {
-    let project = ctx.client.projects().get(uid).await?;
-    let profile = crate::config::set_project(Some(&ctx.profile), Some(project.uid.clone()))?;
+    let org = ctx.org()?;
+    let project = ctx.client.projects(org).get(uid).await?;
+    let profile = crate::config::set_project(Some(&ctx.profile), org, Some(project.uid.clone()))?;
     style::success(format!(
         "active project for profile '{profile}' set to {} ({})",
         project.name, project.uid
@@ -57,8 +55,15 @@ async fn set_active(ctx: &Context, uid: &str) -> Result<()> {
     Ok(())
 }
 
-async fn list(ctx: &Context) -> Result<()> {
-    let projects = ctx.client.projects().list(&Page::default()).await?;
+async fn list(ctx: &Context, limit: u32, cursor: Option<String>) -> Result<()> {
+    let projects = ctx
+        .client
+        .projects(ctx.org()?)
+        .list(&Page {
+            limit: Some(limit),
+            cursor,
+        })
+        .await?;
     if ctx.json() {
         return format::print_json(&projects);
     }
@@ -80,7 +85,7 @@ async fn list(ctx: &Context) -> Result<()> {
 }
 
 async fn get(ctx: &Context, uid: &str) -> Result<()> {
-    let project = ctx.client.projects().get(uid).await?;
+    let project = ctx.client.projects(ctx.org()?).get(uid).await?;
     if ctx.json() {
         return format::print_json(&project);
     }
@@ -94,21 +99,31 @@ async fn get(ctx: &Context, uid: &str) -> Result<()> {
 async fn create(ctx: &Context, name: &str) -> Result<()> {
     let project = ctx
         .client
-        .projects()
-        .create(&CreateProjectRequest { name: name.to_string() })
+        .projects(ctx.org()?)
+        .create(&CreateProjectRequest {
+            name: name.to_string(),
+        })
         .await?;
     if ctx.json() {
         return format::print_json(&project);
     }
-    style::success(format!("created project {} ({})", project.name, project.uid));
+    style::success(format!(
+        "created project {} ({})",
+        project.name, project.uid
+    ));
     Ok(())
 }
 
 async fn update(ctx: &Context, uid: &str, name: &str) -> Result<()> {
     let project = ctx
         .client
-        .projects()
-        .update(uid, &UpdateProjectRequest { name: name.to_string() })
+        .projects(ctx.org()?)
+        .update(
+            uid,
+            &UpdateProjectRequest {
+                name: name.to_string(),
+            },
+        )
         .await?;
     if ctx.json() {
         return format::print_json(&project);
@@ -118,7 +133,7 @@ async fn update(ctx: &Context, uid: &str, name: &str) -> Result<()> {
 }
 
 async fn delete(ctx: &Context, uid: &str) -> Result<()> {
-    ctx.client.projects().delete(uid).await?;
+    ctx.client.projects(ctx.org()?).delete(uid).await?;
     style::success(format!("deleted project {uid}"));
     Ok(())
 }

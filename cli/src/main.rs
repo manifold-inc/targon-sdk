@@ -57,7 +57,9 @@ fn handle_parse_error(e: clap::Error) -> ExitCode {
             .map(|u| format!(" {u}"))
             .unwrap_or_else(|| " <uid>".to_string());
         style::error(format!("unrecognized subcommand '{verb}'"));
-        style::hint(format!("VMs are managed as workloads: targon workload {verb}{uid}"));
+        style::hint(format!(
+            "VMs are managed as workloads: targon workload {verb}{uid}"
+        ));
         return ExitCode::from(2);
     }
     e.exit()
@@ -72,18 +74,32 @@ async fn run(cli: Cli) -> Result<()> {
 
     match &cli.command {
         Commands::Auth(cmd) => {
-            return commands::auth::handle(cmd, cli.profile.as_deref(), cli.base_url.as_deref())
-                .await;
+            return commands::auth::handle(
+                cmd,
+                cli.profile.as_deref(),
+                cli.base_url.as_deref(),
+                cli.org.as_deref(),
+            )
+            .await;
         }
         Commands::Completion { shell } => {
-            generate(*shell, &mut Cli::command(), "targon", &mut std::io::stdout());
+            generate(
+                *shell,
+                &mut Cli::command(),
+                "targon",
+                &mut std::io::stdout(),
+            );
             return Ok(());
         }
         _ => {}
     }
 
     let requires_key = !matches!(cli.command, Commands::Version | Commands::Inventory(_));
-    let resolved = config::resolve(cli.profile.as_deref(), cli.base_url.as_deref())?;
+    let resolved = config::resolve(
+        cli.profile.as_deref(),
+        cli.base_url.as_deref(),
+        cli.org.as_deref(),
+    )?;
     let api_key = if requires_key {
         resolved.api_key.ok_or(CliError::NotAuthenticated)?
     } else {
@@ -99,12 +115,17 @@ async fn run(cli: Cli) -> Result<()> {
         format,
         resolved.profile,
         resolved.base_url,
+        resolved.org,
         resolved.project,
     );
 
     match &cli.command {
         Commands::Auth(_) | Commands::Completion { .. } => unreachable!("handled above"),
         Commands::Workload(cmd) => commands::workload::handle(&ctx, cmd).await,
+        Commands::Org(cmd) => commands::org::handle(&ctx, cmd).await,
+        Commands::Member(cmd) => commands::member::handle(&ctx, cmd).await,
+        Commands::ApiToken(cmd) => commands::api_token::handle(&ctx, cmd).await,
+        Commands::ServiceToken(cmd) => commands::service_token::handle(&ctx, cmd).await,
         Commands::Rental(cmd) => commands::rental::handle(&ctx, cmd).await,
         Commands::Vm(cmd) => commands::vm::handle(&ctx, cmd).await,
         Commands::Volume(cmd) => commands::volume::handle(&ctx, cmd).await,

@@ -36,7 +36,9 @@ pub struct VmSpec {
 #[derive(Debug, Subcommand)]
 pub enum VmCommands {
     /// Create and start a VM from the image catalog
-    #[command(override_usage = "targon vm deploy --name <NAME> --image <IMAGE> --resource <RESOURCE> [OPTIONS]")]
+    #[command(
+        override_usage = "targon vm deploy --name <NAME> --image <IMAGE> --resource <RESOURCE> [OPTIONS]"
+    )]
     Deploy {
         #[command(flatten)]
         spec: VmSpec,
@@ -45,7 +47,9 @@ pub enum VmCommands {
         yes: bool,
     },
     /// Register a VM without starting it
-    #[command(override_usage = "targon vm create --name <NAME> --image <IMAGE> --resource <RESOURCE> [OPTIONS]")]
+    #[command(
+        override_usage = "targon vm create --name <NAME> --image <IMAGE> --resource <RESOURCE> [OPTIONS]"
+    )]
     Create {
         #[command(flatten)]
         spec: VmSpec,
@@ -59,9 +63,9 @@ pub enum VmCommands {
     Reboot { uid: String },
     /// List VMs
     List {
-        /// Filter by state
-        #[arg(long)]
-        state: Option<String>,
+        /// Filter by status
+        #[arg(long, visible_alias = "state")]
+        status: Option<String>,
         /// Filter by project
         #[arg(long)]
         project: Option<String>,
@@ -71,6 +75,9 @@ pub enum VmCommands {
         /// Max results
         #[arg(long, default_value_t = 50)]
         limit: u32,
+        /// Continue listing from this cursor
+        #[arg(long)]
+        cursor: Option<String>,
     },
     /// List available VM images
     Images,
@@ -83,18 +90,20 @@ pub async fn handle(ctx: &Context, cmd: &VmCommands) -> Result<()> {
         VmCommands::Start { uid } => start(ctx, uid).await,
         VmCommands::Reboot { uid } => reboot(ctx, uid).await,
         VmCommands::List {
-            state,
+            status,
             project,
             name,
             limit,
+            cursor,
         } => {
             workload::list(
                 ctx,
                 Some("VM".to_string()),
-                state.clone(),
+                status.clone(),
                 project.clone(),
                 name.clone(),
                 *limit,
+                cursor.clone(),
             )
             .await
         }
@@ -124,8 +133,11 @@ async fn start(ctx: &Context, uid: &str) -> Result<()> {
 
 async fn reboot(ctx: &Context, uid: &str) -> Result<()> {
     commands::ensure_vm(ctx, uid, "reboot").await?;
-    let spinner = progress::spinner_if(!ctx.json(), format!("Rebooting {}…", format::short_uid(uid)));
-    match ctx.client.workloads().reboot(uid).await {
+    let spinner = progress::spinner_if(
+        !ctx.json(),
+        format!("Rebooting {}…", format::short_uid(uid)),
+    );
+    match ctx.client.workloads(ctx.org()?).reboot(uid).await {
         Ok(workload) => {
             spinner.finish_ok(format!("Rebooted {}", workload.uid));
             if ctx.json() {
@@ -141,7 +153,7 @@ async fn reboot(ctx: &Context, uid: &str) -> Result<()> {
 }
 
 async fn images(ctx: &Context) -> Result<()> {
-    let images = ctx.client.workloads().vm_images().await?;
+    let images = ctx.client.workloads(ctx.org()?).vm_images().await?;
     if ctx.json() {
         return format::print_json(&images);
     }
@@ -250,7 +262,7 @@ async fn build_request(
 }
 
 async fn select_image(ctx: &Context) -> Result<String> {
-    let images = ctx.client.workloads().vm_images().await?;
+    let images = ctx.client.workloads(ctx.org()?).vm_images().await?;
     if images.is_empty() {
         return Err(CliError::Config("no vm images available".to_string()));
     }

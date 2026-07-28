@@ -1,7 +1,11 @@
+pub mod api_token;
 pub mod auth;
 pub mod inventory;
+pub mod member;
+pub mod org;
 pub mod project;
 pub mod rental;
+pub mod service_token;
 pub mod ssh_key;
 pub mod version;
 pub mod vm;
@@ -20,6 +24,7 @@ pub struct Context {
     pub format: OutputFormat,
     pub profile: String,
     pub base_url: String,
+    pub org: Option<String>,
     pub project: Option<String>,
 }
 
@@ -29,6 +34,7 @@ impl Context {
         format: OutputFormat,
         profile: String,
         base_url: String,
+        org: Option<String>,
         project: Option<String>,
     ) -> Self {
         Self {
@@ -36,6 +42,7 @@ impl Context {
             format,
             profile,
             base_url,
+            org,
             project,
         }
     }
@@ -46,6 +53,15 @@ impl Context {
 
     pub fn project(&self, flag: Option<String>) -> Option<String> {
         flag.or_else(|| self.project.clone())
+    }
+
+    pub fn org(&self) -> Result<&str> {
+        self.org.as_deref().ok_or_else(|| {
+            CliError::Config(
+                "organization is required\nselect one with: targon org use <slug> (or pass --org)"
+                    .to_string(),
+            )
+        })
     }
 }
 
@@ -116,7 +132,11 @@ pub(crate) fn prompt_list(label: &str) -> Result<Vec<String>> {
 /// Multi-select registered SSH keys for VM deploy/create. Returns an empty
 /// list when the account has no keys (password login still works).
 pub async fn select_ssh_keys(ctx: &Context) -> Result<Vec<String>> {
-    let keys = ctx.client.ssh_keys().list(&Page::default()).await?;
+    let keys = ctx
+        .client
+        .ssh_keys(ctx.org()?)
+        .list(&Page::default())
+        .await?;
     if keys.items.is_empty() {
         style::dim("no ssh keys registered — continuing without (add with: targon key add)");
         return Ok(vec![]);
@@ -134,7 +154,7 @@ pub async fn select_ssh_keys(ctx: &Context) -> Result<Vec<String>> {
 }
 
 pub(crate) async fn ensure_rental(ctx: &Context, uid: &str, verb: &str) -> Result<Workload> {
-    let workload = ctx.client.workloads().get(uid).await?;
+    let workload = ctx.client.workloads(ctx.org()?).get(uid).await?;
     if workload.workload_type == "VM" {
         // First line is the red fact; subsequent lines render as dim → hints.
         let hint = match verb {
@@ -152,7 +172,7 @@ pub(crate) async fn ensure_rental(ctx: &Context, uid: &str, verb: &str) -> Resul
 }
 
 pub(crate) async fn ensure_vm(ctx: &Context, uid: &str, verb: &str) -> Result<Workload> {
-    let workload = ctx.client.workloads().get(uid).await?;
+    let workload = ctx.client.workloads(ctx.org()?).get(uid).await?;
     if workload.workload_type != "VM" {
         let workload_type = &workload.workload_type;
         let hint = match verb {
@@ -164,4 +184,28 @@ pub(crate) async fn ensure_vm(ctx: &Context, uid: &str, verb: &str) -> Result<Wo
         return Err(CliError::Config(hint));
     }
     Ok(workload)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn missing_org_has_an_actionable_error() {
+        let client = Client::builder()
+            .api_key("test")
+            .build()
+            .expect("test client");
+        let ctx = Context::new(
+            client,
+            OutputFormat::Human,
+            "default".to_string(),
+            "https://example.test".to_string(),
+            None,
+            None,
+        );
+
+        let error = ctx.org().expect_err("org should be required").to_string();
+        assert!(error.contains("targon org use <slug>"));
+    }
 }

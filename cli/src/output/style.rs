@@ -71,11 +71,7 @@ pub fn field(label: &str, value: impl AsRef<str>) {
 /// Indented next-action line under a final success message (endpoint, logs,
 /// shell hints). Printed to stderr with the rest of the flow chrome.
 pub fn next_action(label: &str, value: impl AsRef<str>) {
-    eprintln!(
-        "  {:<10} {}",
-        label.color(palettes::DIM),
-        value.as_ref()
-    );
+    eprintln!("  {:<10} {}", label.color(palettes::DIM), value.as_ref());
 }
 
 /// Rounded summary box shown before spending money:
@@ -105,8 +101,7 @@ pub fn summary_box(title: &str, rows: &[(&str, String)]) {
     );
     eprintln!("  {}", top.color(palettes::BORDER));
     for (key, value) in rows {
-        let pad = inner
-            .saturating_sub(2 + key_width + 2 + visible_width(value));
+        let pad = inner.saturating_sub(2 + key_width + 2 + visible_width(value));
         eprintln!(
             "  {}  {:<key_width$}  {}{}{}",
             "│".color(palettes::BORDER),

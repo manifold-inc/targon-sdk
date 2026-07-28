@@ -5,7 +5,7 @@ use colored::Colorize;
 use comfy_table::Cell;
 
 use crate::client::pagination::Page;
-use crate::client::types::CreateSshKeyRequest;
+use crate::client::types::{CreateSshKeyRequest, UpdateSshKeyRequest};
 use crate::commands::{workload, Context};
 use crate::error::{CliError, Result};
 use crate::output::{format, palettes, style, table};
@@ -19,22 +19,30 @@ pub enum SshKeyCommands {
         name: Option<String>,
     },
     /// List registered SSH keys
-    List,
+    List {
+        #[arg(long, default_value_t = 50)]
+        limit: u32,
+        #[arg(long)]
+        cursor: Option<String>,
+    },
     /// Show an SSH key
-    Get {
+    Get { uid: String },
+    /// Rename an SSH key
+    Update {
         uid: String,
+        #[arg(long)]
+        name: String,
     },
     /// Delete an SSH key
-    Delete {
-        uid: String,
-    },
+    Delete { uid: String },
 }
 
 pub async fn handle(ctx: &Context, cmd: &SshKeyCommands) -> Result<()> {
     match cmd {
         SshKeyCommands::Add { path, name } => add(ctx, path, name.as_deref()).await,
-        SshKeyCommands::List => list(ctx).await,
+        SshKeyCommands::List { limit, cursor } => list(ctx, *limit, cursor.clone()).await,
         SshKeyCommands::Get { uid } => get(ctx, uid).await,
+        SshKeyCommands::Update { uid, name } => update(ctx, uid, name).await,
         SshKeyCommands::Delete { uid } => delete(ctx, uid).await,
     }
 }
@@ -60,7 +68,7 @@ async fn add(ctx: &Context, path: &Path, name: Option<&str>) -> Result<()> {
 
     let key = ctx
         .client
-        .ssh_keys()
+        .ssh_keys(ctx.org()?)
         .create(&CreateSshKeyRequest {
             name,
             ssh_key: public_key.to_string(),
@@ -74,8 +82,15 @@ async fn add(ctx: &Context, path: &Path, name: Option<&str>) -> Result<()> {
     Ok(())
 }
 
-async fn list(ctx: &Context) -> Result<()> {
-    let keys = ctx.client.ssh_keys().list(&Page::default()).await?;
+async fn list(ctx: &Context, limit: u32, cursor: Option<String>) -> Result<()> {
+    let keys = ctx
+        .client
+        .ssh_keys(ctx.org()?)
+        .list(&Page {
+            limit: Some(limit),
+            cursor,
+        })
+        .await?;
     if ctx.json() {
         return format::print_json(&keys);
     }
@@ -98,7 +113,7 @@ async fn list(ctx: &Context) -> Result<()> {
 }
 
 async fn get(ctx: &Context, uid: &str) -> Result<()> {
-    let key = ctx.client.ssh_keys().get(uid).await?;
+    let key = ctx.client.ssh_keys(ctx.org()?).get(uid).await?;
     if ctx.json() {
         return format::print_json(&key);
     }
@@ -109,8 +124,26 @@ async fn get(ctx: &Context, uid: &str) -> Result<()> {
     Ok(())
 }
 
+async fn update(ctx: &Context, uid: &str, name: &str) -> Result<()> {
+    let key = ctx
+        .client
+        .ssh_keys(ctx.org()?)
+        .update(
+            uid,
+            &UpdateSshKeyRequest {
+                name: name.to_string(),
+            },
+        )
+        .await?;
+    if ctx.json() {
+        return format::print_json(&key);
+    }
+    style::success(format!("updated ssh key {}", key.uid));
+    Ok(())
+}
+
 async fn delete(ctx: &Context, uid: &str) -> Result<()> {
-    ctx.client.ssh_keys().delete(uid).await?;
+    ctx.client.ssh_keys(ctx.org()?).delete(uid).await?;
     style::success(format!("deleted ssh key {uid}"));
     Ok(())
 }
