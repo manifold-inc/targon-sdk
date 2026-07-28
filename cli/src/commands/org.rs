@@ -95,7 +95,7 @@ async fn list(ctx: &Context, limit: u32, cursor: Option<String>) -> Result<()> {
         ]);
     }
     table::print(&output);
-    let marker = "▸".color(palettes::ACCENT).to_string();
+    let marker = "➜".color(palettes::ACCENT).to_string();
     let mut summary = format!(
         "{} {} {marker} = active",
         workload::plural(orgs.items.len(), "organization"),

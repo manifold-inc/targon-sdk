@@ -86,7 +86,7 @@ pub fn type_cell(workload_type: &str) -> Cell {
 /// Team organizations are bright cyan; the personal organization is dim.
 pub fn org_type_cell(org_type: &str) -> Cell {
     colored_cell(
-        org_type.to_ascii_uppercase(),
+        org_type.to_ascii_lowercase(),
         palettes::org_type_color(org_type),
     )
 }
@@ -94,7 +94,7 @@ pub fn org_type_cell(org_type: &str) -> Cell {
 /// Active organization marker shown in its own narrow column.
 pub fn active_org_cell(active: bool) -> Cell {
     if active {
-        colored_cell("➜".to_string(), palettes::SUCCESS)
+        colored_cell("➜".to_string(), palettes::ACCENT)
     } else {
         Cell::new("")
     }
