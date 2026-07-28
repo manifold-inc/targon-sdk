@@ -58,15 +58,6 @@ pub fn dim(msg: impl AsRef<str>) {
     eprintln!("{}", msg.as_ref().color(palettes::DIM));
 }
 
-/// Compact context line shown above a scoped resource list.
-pub fn context(label: &str, value: &str) {
-    println!(
-        "{} {}",
-        label.to_lowercase().color(palettes::DIM),
-        value.color(palettes::ACCENT)
-    );
-}
-
 /// Key/value line for detail panels: dim lowercase key, value as given
 /// (callers pre-color values with semantic colors where relevant).
 pub fn field(label: &str, value: impl AsRef<str>) {

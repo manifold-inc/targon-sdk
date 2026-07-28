@@ -110,9 +110,8 @@ async fn list(
     if ctx.json() {
         return format::print_json(&members);
     }
-    style::context("Org", org);
     if members.items.is_empty() {
-        style::dim("no members");
+        style::dim(format!("no members in org {org}"));
         return Ok(());
     }
     let mut output = table::table(&["USERNAME", "NAME", "EMAIL", "ROLE", "STATUS"]);
@@ -126,7 +125,12 @@ async fn list(
         ]);
     }
     table::print(&output);
-    table::summary(workload::plural(members.items.len(), "member"));
+    table::summary(format!(
+        "{} {} org {}",
+        workload::plural(members.items.len(), "member"),
+        style::SEP,
+        org.color(palettes::ACCENT)
+    ));
     Ok(())
 }
 
