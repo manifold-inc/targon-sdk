@@ -1,9 +1,11 @@
+import os
+
 import targon.client
 from targon import Resources
 from targon.client import CreateWorkloadRequest, PortConfig
 from targon.core.exceptions import TargonError, TimeoutError
 
-client = targon.client.Client.from_env()
+client = targon.client.Client.from_env(org=os.environ["TARGON_ORG"])
 
 with client:
     # Define the workload.
