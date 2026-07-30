@@ -24,25 +24,30 @@ class BaseHTTPClient:
         client = Client.from_env()
         return cls(client)
 
-    def _get(self, path: str, **kwargs: Any):
-        res = self.session.get(f"{self.base_url}{path}", **kwargs)
+    def _request(self, method: str, path: str, **kwargs: Any):
+        kwargs.setdefault("timeout", self.client.config.timeout)
+        kwargs.setdefault("verify", self.client.config.verify_ssl)
+        res = self.session.request(
+            method,
+            f"{self.base_url}{path}",
+            **kwargs,
+        )
         return self._handle_response(res)
+
+    def _get(self, path: str, **kwargs: Any):
+        return self._request("GET", path, **kwargs)
 
     def _post(self, path: str, **kwargs: Any):
-        res = self.session.post(f"{self.base_url}{path}", **kwargs)
-        return self._handle_response(res)
+        return self._request("POST", path, **kwargs)
 
     def _put(self, path: str, **kwargs: Any):
-        res = self.session.put(f"{self.base_url}{path}", **kwargs)
-        return self._handle_response(res)
+        return self._request("PUT", path, **kwargs)
 
     def _patch(self, path: str, **kwargs: Any):
-        res = self.session.patch(f"{self.base_url}{path}", **kwargs)
-        return self._handle_response(res)
+        return self._request("PATCH", path, **kwargs)
 
     def _delete(self, path: str, **kwargs: Any):
-        res = self.session.delete(f"{self.base_url}{path}", **kwargs)
-        return self._handle_response(res)
+        return self._request("DELETE", path, **kwargs)
 
     def _handle_response(self, res: requests.Response):
         if res.status_code >= 400:

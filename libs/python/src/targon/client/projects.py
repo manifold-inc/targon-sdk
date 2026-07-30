@@ -3,11 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-from targon.client.constants import (
-    DEFAULT_BASE_URL,
-    PROJECT_DETAIL_ENDPOINT,
-    PROJECTS_ENDPOINT,
-)
+from targon.client.constants import org_path
 from targon.core.exceptions import HydrationError, ValidationError
 from targon.core.objects import BaseHTTPClient
 
@@ -31,7 +27,7 @@ def _require_dict(data: Any, *, source: str, object_type: str) -> Dict[str, Any]
     return data
 
 
-@dataclass(slots=True)
+@dataclass
 class Project:
     uid: str
     name: str = ""
@@ -54,7 +50,7 @@ class Project:
         )
 
 
-@dataclass(slots=True)
+@dataclass
 class ProjectListResponse:
     items: List[Project] = field(default_factory=list)
     next_cursor: Optional[str] = None
@@ -79,14 +75,16 @@ class ProjectListResponse:
 
 
 class ProjectClient(BaseHTTPClient):
-    def __init__(self, client):
-        super().__init__(client)
-        self.base_url = DEFAULT_BASE_URL
+    def _path(self, project_uid: Optional[str] = None) -> str:
+        path = org_path(self.client.require_org(), "projects")
+        if project_uid is not None:
+            path = f"{path}/{project_uid}"
+        return path
 
     def create(self, name: str) -> Project:
         name = _validate_non_empty(name, "name")
         result = self._post(
-            PROJECTS_ENDPOINT,
+            self._path(),
             json={"name": name},
         )
         return Project.from_dict(result)
@@ -99,23 +97,23 @@ class ProjectClient(BaseHTTPClient):
             params["limit"] = limit
         if cursor:
             params["cursor"] = cursor
-        result = self._get(PROJECTS_ENDPOINT, params=params or None)
+        result = self._get(self._path(), params=params or None)
         return ProjectListResponse.from_dict(result)
 
     def get(self, project_uid: str) -> Project:
         project_uid = _validate_non_empty(project_uid, "project_uid")
-        result = self._get(PROJECT_DETAIL_ENDPOINT.format(project_uid=project_uid))
+        result = self._get(self._path(project_uid))
         return Project.from_dict(result)
 
     def update(self, project_uid: str, name: str) -> Project:
         project_uid = _validate_non_empty(project_uid, "project_uid")
         name = _validate_non_empty(name, "name")
         result = self._patch(
-            PROJECT_DETAIL_ENDPOINT.format(project_uid=project_uid),
+            self._path(project_uid),
             json={"name": name},
         )
         return Project.from_dict(result)
 
     def delete(self, project_uid: str) -> None:
         project_uid = _validate_non_empty(project_uid, "project_uid")
-        self._delete(PROJECT_DETAIL_ENDPOINT.format(project_uid=project_uid))
+        self._delete(self._path(project_uid))

@@ -3,14 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-from targon.client.constants import (
-    DEFAULT_BASE_URL,
-    VOLUME_DELETE_DEPLOYMENT_ENDPOINT,
-    VOLUME_DETAIL_ENDPOINT,
-    VOLUME_EVENTS_ENDPOINT,
-    VOLUME_STATE_ENDPOINT,
-    VOLUMES_ENDPOINT,
-)
+from targon.client.constants import org_path
 from targon.core.exceptions import HydrationError, ValidationError
 from targon.core.objects import BaseHTTPClient
 
@@ -34,7 +27,7 @@ def _require_dict(data: Any, *, source: str, object_type: str) -> Dict[str, Any]
     return data
 
 
-@dataclass(slots=True)
+@dataclass
 class VolumeState:
     status: str = ""
     message: str = ""
@@ -51,7 +44,7 @@ class VolumeState:
         )
 
 
-@dataclass(slots=True)
+@dataclass
 class Volume:
     uid: str
     name: str = ""
@@ -62,6 +55,8 @@ class Volume:
     mount_path: Optional[str] = None
     workload_uid: Optional[str] = None
     pvc_name: Optional[str] = None
+    last_backup_at: Optional[str] = None
+    deleted_by: Optional[str] = None
     created_at: str = ""
     updated_at: str = ""
 
@@ -81,12 +76,14 @@ class Volume:
             mount_path=data.get("mount_path"),
             workload_uid=data.get("workload_uid"),
             pvc_name=data.get("pvc_name"),
+            last_backup_at=data.get("last_backup_at"),
+            deleted_by=data.get("deleted_by"),
             created_at=data.get("created_at", ""),
             updated_at=data.get("updated_at", ""),
         )
 
 
-@dataclass(slots=True)
+@dataclass
 class VolumeListResponse:
     items: List[Volume] = field(default_factory=list)
     next_cursor: Optional[str] = None
@@ -110,7 +107,7 @@ class VolumeListResponse:
         )
 
 
-@dataclass(slots=True)
+@dataclass
 class VolumeStateResponse:
     uid: str
     status: str = ""
@@ -130,16 +127,22 @@ class VolumeStateResponse:
         )
 
 
-@dataclass(slots=True)
+@dataclass
 class VolumeEvent:
     volume_uid: str = ""
     event_type: str = ""
-    old_status: str = ""
-    new_status: str = ""
-    reason: str = ""
-    resource_name: str = ""
-    pvc_name: str = ""
-    requested_size: str = ""
+    billing_processed_at: Optional[str] = None
+    billing_status: Optional[str] = None
+    cost_per_second: Optional[int] = None
+    k8s_resource_version: Optional[str] = None
+    namespace: Optional[str] = None
+    old_status: Optional[str] = None
+    new_status: Optional[str] = None
+    reason: Optional[str] = None
+    resource_name: Optional[str] = None
+    pvc_name: Optional[str] = None
+    requested_size: Optional[str] = None
+    storage_class: Optional[str] = None
     created_at: str = ""
 
     @classmethod
@@ -148,17 +151,23 @@ class VolumeEvent:
         return cls(
             volume_uid=data.get("volume_uid", ""),
             event_type=data.get("event_type", ""),
-            old_status=data.get("old_status", ""),
-            new_status=data.get("new_status", ""),
-            reason=data.get("reason", ""),
-            resource_name=data.get("resource_name", ""),
-            pvc_name=data.get("pvc_name", ""),
-            requested_size=data.get("requested_size", ""),
+            billing_processed_at=data.get("billing_processed_at"),
+            billing_status=data.get("billing_status"),
+            cost_per_second=data.get("cost_per_second"),
+            k8s_resource_version=data.get("k8s_resource_version"),
+            namespace=data.get("namespace"),
+            old_status=data.get("old_status"),
+            new_status=data.get("new_status"),
+            reason=data.get("reason"),
+            resource_name=data.get("resource_name"),
+            pvc_name=data.get("pvc_name"),
+            requested_size=data.get("requested_size"),
+            storage_class=data.get("storage_class"),
             created_at=data.get("created_at", ""),
         )
 
 
-@dataclass(slots=True)
+@dataclass
 class VolumeEventsResponse:
     items: List[VolumeEvent] = field(default_factory=list)
     next_cursor: Optional[str] = None
@@ -180,21 +189,21 @@ class VolumeEventsResponse:
         )
 
 
-@dataclass(slots=True)
-class VolumeCreateResponse:
+@dataclass
+class VolumeOperationResponse:
     uid: str
     state: Optional[VolumeState] = None
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> VolumeCreateResponse:
+    def from_dict(cls, data: Dict[str, Any]) -> VolumeOperationResponse:
         data = _require_dict(
-            data, source="volume create", object_type="VolumeCreateResponse"
+            data, source="volume operation", object_type="VolumeOperationResponse"
         )
         uid = data.get("uid")
         if not uid:
             raise HydrationError(
                 "Missing uid in volume create response",
-                object_type="VolumeCreateResponse",
+                object_type="VolumeOperationResponse",
             )
         return cls(
             uid=uid,
@@ -202,63 +211,60 @@ class VolumeCreateResponse:
         )
 
 
-@dataclass(slots=True)
-class VolumeDeleteDeploymentResponse:
-    uid: str
-    state: Optional[VolumeState] = None
-
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> VolumeDeleteDeploymentResponse:
-        data = _require_dict(
-            data,
-            source="volume delete deployment",
-            object_type="VolumeDeleteDeploymentResponse",
-        )
-        return cls(
-            uid=data.get("uid", ""),
-            state=VolumeState.from_dict(data.get("state")),
-        )
+VolumeCreateResponse = VolumeOperationResponse
 
 
 class VolumeClient(BaseHTTPClient):
-    def __init__(self, client):
-        super().__init__(client)
-        self.base_url = DEFAULT_BASE_URL
+    def _path(
+        self, volume_uid: Optional[str] = None, suffix: Optional[str] = None
+    ) -> str:
+        path = org_path(self.client.require_org(), "volumes")
+        if volume_uid is not None:
+            path = f"{path}/{volume_uid}"
+        if suffix is not None:
+            path = f"{path}/{suffix}"
+        return path
 
     def create(
         self, name: str, size_in_mb: int, resource_name: str
-    ) -> VolumeCreateResponse:
+    ) -> VolumeOperationResponse:
         name = _validate_non_empty(name, "name")
         resource_name = _validate_non_empty(resource_name, "resource_name")
         result = self._post(
-            VOLUMES_ENDPOINT,
+            self._path(),
             json={
                 "name": name,
                 "size_in_mb": size_in_mb,
                 "resource_name": resource_name,
             },
         )
-        return VolumeCreateResponse.from_dict(result)
+        return VolumeOperationResponse.from_dict(result)
 
     def list(
-        self, *, limit: Optional[int] = None, cursor: Optional[str] = None
+        self,
+        *,
+        limit: Optional[int] = None,
+        cursor: Optional[str] = None,
+        workload_uid: Optional[str] = None,
     ) -> VolumeListResponse:
         params: Dict[str, Any] = {}
         if limit is not None:
             params["limit"] = limit
         if cursor:
             params["cursor"] = cursor
-        result = self._get(VOLUMES_ENDPOINT, params=params or None)
+        if workload_uid is not None:
+            params["workload_uid"] = workload_uid
+        result = self._get(self._path(), params=params or None)
         return VolumeListResponse.from_dict(result)
 
     def get(self, volume_uid: str) -> Volume:
         volume_uid = _validate_non_empty(volume_uid, "volume_uid")
-        result = self._get(VOLUME_DETAIL_ENDPOINT.format(volume_uid=volume_uid))
+        result = self._get(self._path(volume_uid))
         return Volume.from_dict(result)
 
     def get_state(self, volume_uid: str) -> VolumeStateResponse:
         volume_uid = _validate_non_empty(volume_uid, "volume_uid")
-        result = self._get(VOLUME_STATE_ENDPOINT.format(volume_uid=volume_uid))
+        result = self._get(self._path(volume_uid, "state"))
         return VolumeStateResponse.from_dict(result)
 
     def get_events(
@@ -275,7 +281,7 @@ class VolumeClient(BaseHTTPClient):
         if cursor:
             params["cursor"] = cursor
         result = self._get(
-            VOLUME_EVENTS_ENDPOINT.format(volume_uid=volume_uid),
+            self._path(volume_uid, "events"),
             params=params or None,
         )
         return VolumeEventsResponse.from_dict(result)
@@ -284,18 +290,11 @@ class VolumeClient(BaseHTTPClient):
         volume_uid = _validate_non_empty(volume_uid, "volume_uid")
         name = _validate_non_empty(name, "name")
         result = self._patch(
-            VOLUME_DETAIL_ENDPOINT.format(volume_uid=volume_uid),
+            self._path(volume_uid),
             json={"name": name},
         )
         return Volume.from_dict(result)
 
     def delete(self, volume_uid: str) -> None:
         volume_uid = _validate_non_empty(volume_uid, "volume_uid")
-        self._delete(VOLUME_DETAIL_ENDPOINT.format(volume_uid=volume_uid))
-
-    def delete_deployment(self, volume_uid: str) -> VolumeDeleteDeploymentResponse:
-        volume_uid = _validate_non_empty(volume_uid, "volume_uid")
-        result = self._post(
-            VOLUME_DELETE_DEPLOYMENT_ENDPOINT.format(volume_uid=volume_uid)
-        )
-        return VolumeDeleteDeploymentResponse.from_dict(result)
+        self._delete(self._path(volume_uid))

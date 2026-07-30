@@ -4,6 +4,21 @@ from targon.client.inventory import (
     InventoryClient,
     InventorySpec,
 )
+from targon.client.member import (
+    Member,
+    MemberClient,
+    MemberListResponse,
+    MemberUser,
+)
+from targon.client.org import (
+    Credits,
+    CreditsClient,
+    Org,
+    OrgClient,
+    OrgListResponse,
+    Wallet,
+    WalletClient,
+)
 from targon.client.projects import (
     Project,
     ProjectClient,
@@ -15,18 +30,19 @@ from targon.client.ssh_key import (
     SshKeyClient,
     SshKeyListResponse,
 )
-from targon.client.user import (
-    ApiKey,
-    ApiKeyListResponse,
-    Credits,
-    UserClient,
-    Wallet,
+from targon.client.token import (
+    ApiToken,
+    ApiTokenClient,
+    ApiTokenListResponse,
+    ServiceToken,
+    ServiceTokenClient,
+    ServiceTokenListResponse,
+    TokenCreator,
 )
 from targon.client.volume import (
     Volume,
     VolumeClient,
     VolumeCreateResponse,
-    VolumeDeleteDeploymentResponse,
     VolumeEvent,
     VolumeEventsResponse,
     VolumeListResponse,
@@ -41,6 +57,8 @@ from targon.client.workload import (
     RegistryAuth,
     SshKeyAttachResponse,
     UpdateWorkloadRequest,
+    VmConfig,
+    VmImage,
     VolumeMount,
     VolumeMountResponse,
     WorkloadClient,
@@ -51,9 +69,11 @@ from targon.client.workload import (
     WorkloadListResponse,
     WorkloadResource,
     WorkloadResponse,
+    WorkloadSshKey,
     WorkloadState,
     WorkloadStateResponse,
     WorkloadURL,
+    WorkloadVolumeMount,
 )
 
 __all__ = [
@@ -65,6 +85,8 @@ __all__ = [
     "WorkloadClient",
     "CreateWorkloadRequest",
     "UpdateWorkloadRequest",
+    "VmConfig",
+    "VmImage",
     "EnvVar",
     "PortConfig",
     "RegistryAuth",
@@ -76,6 +98,8 @@ __all__ = [
     "WorkloadStateResponse",
     "WorkloadState",
     "WorkloadResource",
+    "WorkloadSshKey",
+    "WorkloadVolumeMount",
     "WorkloadURL",
     "WorkloadEvent",
     "WorkloadEventsResponse",
@@ -90,17 +114,30 @@ __all__ = [
     "VolumeEventsResponse",
     "VolumeListResponse",
     "VolumeCreateResponse",
-    "VolumeDeleteDeploymentResponse",
     # ssh key
     "SshKeyClient",
     "SshKey",
     "SshKeyListResponse",
-    # user
-    "UserClient",
+    # organizations
+    "OrgClient",
+    "Org",
+    "OrgListResponse",
+    "MemberClient",
+    "Member",
+    "MemberUser",
+    "MemberListResponse",
+    "WalletClient",
     "Wallet",
+    "CreditsClient",
     "Credits",
-    "ApiKey",
-    "ApiKeyListResponse",
+    # tokens
+    "ApiTokenClient",
+    "ApiToken",
+    "ApiTokenListResponse",
+    "ServiceTokenClient",
+    "ServiceToken",
+    "ServiceTokenListResponse",
+    "TokenCreator",
     # project
     "ProjectClient",
     "Project",
