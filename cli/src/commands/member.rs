@@ -3,9 +3,7 @@ use colored::Colorize;
 use comfy_table::Cell;
 
 use crate::client::pagination::Page;
-use crate::client::types::{
-    ListMembersParams, Membership, MembershipStatus, OrgRole, UpdateMemberRequest,
-};
+use crate::client::types::{ListMembersParams, MembershipStatus, OrgRole, UpdateMemberRequest};
 use crate::commands::{workload, Context};
 use crate::error::{CliError, Result};
 use crate::output::{format, palettes, prompt, style, table};
@@ -114,11 +112,10 @@ async fn list(
         style::dim(format!("no members in org {org}"));
         return Ok(());
     }
-    let mut output = table::table(&["USERNAME", "NAME", "EMAIL", "ROLE", "STATUS"]);
+    let mut output = table::table(&["USERNAME", "EMAIL", "ROLE", "STATUS"]);
     for member in &members.items {
         output.add_row(vec![
             Cell::new(&member.user.username),
-            Cell::new(full_name(member)),
             Cell::new(&member.user.email),
             table::member_role_cell(member.role.as_str()),
             table::state_cell(member.status.as_str()),
@@ -143,7 +140,6 @@ async fn get(ctx: &Context, username: &str) -> Result<()> {
         "Username",
         member.user.username.color(palettes::ACCENT).to_string(),
     );
-    style::field("Name", full_name(&member));
     style::field("Email", &member.user.email);
     style::field("Role", member.role.as_str());
     style::field("Status", format::state_badge(member.status.as_str()));
@@ -180,21 +176,4 @@ async fn remove(ctx: &Context, username: &str, yes: bool) -> Result<()> {
     ctx.client.members(ctx.org()?).delete(username).await?;
     style::success(format!("removed member {username}"));
     Ok(())
-}
-
-fn full_name(member: &Membership) -> String {
-    let name = [
-        member.user.first_name.as_deref(),
-        member.user.last_name.as_deref(),
-    ]
-    .into_iter()
-    .flatten()
-    .filter(|part| !part.trim().is_empty())
-    .collect::<Vec<_>>()
-    .join(" ");
-    if name.is_empty() {
-        member.user.username.clone()
-    } else {
-        name
-    }
 }

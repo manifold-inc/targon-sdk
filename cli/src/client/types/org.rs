@@ -10,6 +10,7 @@ pub struct Org {
     pub name: String,
     pub org_type: String,
     pub role: OrgRole,
+    #[serde(default)]
     pub billing_email: String,
     pub credits: f64,
     pub overage: i64,
@@ -73,8 +74,6 @@ impl MembershipStatus {
 pub struct MembershipUser {
     pub username: String,
     pub email: String,
-    pub first_name: Option<String>,
-    pub last_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
