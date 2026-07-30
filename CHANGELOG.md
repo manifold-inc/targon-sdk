@@ -9,6 +9,21 @@ Component releases use prefixed tags (`cli/vX.Y.Z`, `python/vX.Y.Z`, …).
 
 ## [Unreleased]
 
+## [python/3.0.0] - 2026-07-27
+### Added
+- Added bound organization context through `Client(org=...)`, `TARGON_ORG`, active CLI profiles, and `Client.for_org()`.
+- Added organization, member, wallet, credits, personal API token, and organization service token clients.
+- Added mocked request and configuration regression tests for the Python SDK.
+
+### Changed
+- Migrated Python workloads, projects, volumes, SSH keys, and inventory from `/tha/v2` to `/tha/v3`.
+- Made custom API hosts and transport configuration apply consistently to every resource client.
+- Expanded workload lifecycle support with suspend, reboot, VM image, and VM log-type operations.
+
+### Removed
+- Removed the v2 `client.user` API-key facade, API-key rotation, and volume deployment deletion endpoint.
+- Templates, experiments, and deployment-type header configuration remain intentionally unsupported.
+
 ## [cli/3.0.0] - 2026-07-27
 ### Added
 - Added explicit organization context through `--org`, `TARGON_ORG`, and `targon org use`, with per-organization default projects.
