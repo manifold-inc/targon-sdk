@@ -56,7 +56,7 @@ async fn list(ctx: &Context, limit: u32, cursor: Option<String>) -> Result<()> {
         output.add_row(vec![
             table::uid_cell(&token.uid),
             Cell::new(&token.name),
-            Cell::new(&token.created_by.username),
+            Cell::new(token.created_by.as_ref().map(creator_label).unwrap_or("-")),
             table::dim_cell(format::relative_time(token.created_at)),
         ]);
     }
@@ -92,4 +92,12 @@ async fn delete(ctx: &Context, uid: &str, yes: bool) -> Result<()> {
     ctx.client.service_tokens(ctx.org()?).delete(uid).await?;
     style::success(format!("deleted service token {uid}"));
     Ok(())
+}
+
+fn creator_label(creator: &crate::client::types::TokenCreator) -> &str {
+    if creator.username.is_empty() {
+        &creator.email
+    } else {
+        &creator.username
+    }
 }

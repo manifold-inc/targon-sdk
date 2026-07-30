@@ -25,8 +25,6 @@ pub struct UpdateApiTokenRequest {
 pub struct TokenCreator {
     pub username: String,
     pub email: String,
-    pub first_name: String,
-    pub last_name: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -35,7 +33,8 @@ pub struct ServiceToken {
     pub name: String,
     #[serde(default)]
     pub token: Option<String>,
-    pub created_by: TokenCreator,
+    #[serde(default)]
+    pub created_by: Option<TokenCreator>,
     pub created_at: DateTime<Utc>,
 }
 
