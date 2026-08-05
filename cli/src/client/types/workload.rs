@@ -92,8 +92,6 @@ pub struct Workload {
     #[serde(default)]
     pub project_id: Option<String>,
     #[serde(default)]
-    pub app_id: Option<String>,
-    #[serde(default)]
     pub ports: Vec<Port>,
     #[serde(default)]
     pub envs: Vec<EnvVar>,
@@ -105,6 +103,8 @@ pub struct Workload {
     pub volumes: Vec<VolumeMount>,
     #[serde(default)]
     pub ssh_keys: Vec<WorkloadSshKey>,
+    #[serde(default)]
+    pub registry_auth: Option<RegistryAuth>,
     #[serde(default)]
     pub state: Option<WorkloadState>,
     #[serde(default)]
@@ -118,7 +118,7 @@ pub struct Workload {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WorkloadSummary {
+pub struct WorkloadOperationResponse {
     pub uid: String,
     pub name: String,
     #[serde(rename = "type")]
@@ -182,6 +182,8 @@ pub struct WorkloadEvent {
     pub exit_code: Option<i32>,
     #[serde(default)]
     pub replica_count: Option<u32>,
+    #[serde(default)]
+    pub old_replica_count: Option<u32>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -194,8 +196,6 @@ pub struct CreateWorkloadRequest {
     pub workload_type: WorkloadType,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub project_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub app_id: Option<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub ports: Vec<Port>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -227,7 +227,6 @@ impl CreateWorkloadRequest {
             resource_name: resource_name.into(),
             workload_type,
             project_id: None,
-            app_id: None,
             ports: Vec::new(),
             envs: Vec::new(),
             commands: Vec::new(),
@@ -248,8 +247,6 @@ pub struct UpdateWorkloadRequest {
     pub image: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub project_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub app_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ports: Option<Vec<Port>>,
     #[serde(skip_serializing_if = "Option::is_none")]

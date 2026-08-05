@@ -1,10 +1,14 @@
 use clap::{Parser, Subcommand};
 use clap_complete::Shell;
 
+use crate::commands::api_token::ApiTokenCommands;
 use crate::commands::auth::AuthCommands;
 use crate::commands::inventory::InventoryArgs;
+use crate::commands::member::MemberCommands;
+use crate::commands::org::OrgCommands;
 use crate::commands::project::ProjectCommands;
 use crate::commands::rental::RentalCommands;
+use crate::commands::service_token::ServiceTokenCommands;
 use crate::commands::ssh_key::SshKeyCommands;
 use crate::commands::vm::VmCommands;
 use crate::commands::volume::VolumeCommands;
@@ -31,6 +35,9 @@ pub struct Cli {
     /// Override the API base URL
     #[arg(long = "base-url", global = true)]
     pub base_url: Option<String>,
+    /// Organization slug for this command
+    #[arg(long, global = true)]
+    pub org: Option<String>,
     /// Emit machine-readable JSON
     #[arg(long, global = true)]
     pub json: bool,
@@ -43,6 +50,18 @@ pub enum Commands {
     /// Manage authentication
     #[command(subcommand)]
     Auth(AuthCommands),
+    /// Manage organizations and active organization context
+    #[command(subcommand)]
+    Org(OrgCommands),
+    /// Manage members of the selected organization
+    #[command(subcommand)]
+    Member(MemberCommands),
+    /// Manage personal API tokens
+    #[command(subcommand, name = "api-token")]
+    ApiToken(ApiTokenCommands),
+    /// Manage service tokens in the selected organization
+    #[command(subcommand, name = "service-token")]
+    ServiceToken(ServiceTokenCommands),
     /// Manage any workload by UID
     #[command(subcommand, alias = "wl")]
     Workload(Box<WorkloadCommands>),

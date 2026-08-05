@@ -3,16 +3,20 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, cast
 
 from targon.client.constants import INVENTORY_ENDPOINT
+from targon.core.exceptions import ValidationError
 from targon.core.objects import BaseHTTPClient
+
+VALID_INVENTORY_TYPES = frozenset({"rental", "storage", "vm"})
+DEPRECATED_INVENTORY_TYPES = frozenset({"serverless"})
 
 
 @dataclass
 class InventorySpec:
     gpu_type: Optional[str] = None
-    gpu_count: Optional[int] = None
-    vcpu: Optional[int] = None
-    memory: Optional[int] = None
-    storage: Optional[int] = None
+    gpu_count: int = 0
+    vcpu: int = 0
+    memory: int = 0
+    storage: int = 0
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]):
@@ -20,10 +24,10 @@ class InventorySpec:
             data = {}
         return cls(
             gpu_type=data.get("gpu_type"),
-            gpu_count=data.get("gpu_count"),
-            vcpu=data.get("vcpu"),
-            memory=data.get("memory"),
-            storage=data.get("storage"),
+            gpu_count=int(data.get("gpu_count", 0)),
+            vcpu=int(data.get("vcpu", 0)),
+            memory=int(data.get("memory", 0)),
+            storage=int(data.get("storage", 0)),
         )
 
 
@@ -65,15 +69,34 @@ class Inventory:
 class InventoryClient(BaseHTTPClient):
     """Inventory client for resource queries."""
 
-    def capacity(
+    def list(
         self,
-        inventory_type: Optional[str] = "rental",
+        inventory_type: Optional[str] = None,
         gpu: Optional[bool] = None,
     ) -> List[Inventory]:
         """Get inventory entries, optionally filtered by type and GPU support."""
         params: Dict[str, Any] = {}
         if inventory_type is not None:
-            params["type"] = inventory_type
+            if not isinstance(inventory_type, str) or not inventory_type.strip():
+                raise ValidationError(
+                    "inventory_type must be a non-empty string",
+                    field="inventory_type",
+                    value=inventory_type,
+                )
+            normalized_type = inventory_type.strip().lower()
+            if normalized_type in DEPRECATED_INVENTORY_TYPES:
+                raise ValidationError(
+                    f"inventory type {normalized_type} has been deprecated",
+                    field="inventory_type",
+                    value=inventory_type,
+                )
+            if normalized_type not in VALID_INVENTORY_TYPES:
+                raise ValidationError(
+                    "inventory_type must be one of rental, storage, vm",
+                    field="inventory_type",
+                    value=inventory_type,
+                )
+            params["type"] = normalized_type
         if gpu is not None:
             params["gpu"] = str(gpu).lower()
 
@@ -88,3 +111,11 @@ class InventoryClient(BaseHTTPClient):
 
         data_list = cast(List[Dict[str, Any]], res)
         return [Inventory.from_dict(data) for data in data_list]
+
+    def capacity(
+        self,
+        inventory_type: Optional[str] = None,
+        gpu: Optional[bool] = None,
+    ) -> List[Inventory]:
+        """Compatibility alias for :meth:`list`."""
+        return self.list(inventory_type=inventory_type, gpu=gpu)

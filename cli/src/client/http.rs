@@ -40,23 +40,31 @@ impl HttpClient {
         path: &str,
         query: &[(&str, String)],
     ) -> Result<T> {
-        self.send_json(self.request(Method::GET, path).query(query)).await
+        self.send_json(self.request(Method::GET, path).query(query))
+            .await
     }
 
     pub async fn post<T: DeserializeOwned, B: Serialize>(&self, path: &str, body: &B) -> Result<T> {
-        self.send_json(self.request(Method::POST, path).json(body)).await
+        self.send_json(self.request(Method::POST, path).json(body))
+            .await
     }
 
     pub async fn post_empty<T: DeserializeOwned>(&self, path: &str) -> Result<T> {
         self.send_json(self.request(Method::POST, path)).await
     }
 
-    pub async fn patch<T: DeserializeOwned, B: Serialize>(&self, path: &str, body: &B) -> Result<T> {
-        self.send_json(self.request(Method::PATCH, path).json(body)).await
+    pub async fn patch<T: DeserializeOwned, B: Serialize>(
+        &self,
+        path: &str,
+        body: &B,
+    ) -> Result<T> {
+        self.send_json(self.request(Method::PATCH, path).json(body))
+            .await
     }
 
     pub async fn put<T: DeserializeOwned, B: Serialize>(&self, path: &str, body: &B) -> Result<T> {
-        self.send_json(self.request(Method::PUT, path).json(body)).await
+        self.send_json(self.request(Method::PUT, path).json(body))
+            .await
     }
 
     pub async fn put_empty<T: DeserializeOwned>(&self, path: &str) -> Result<T> {

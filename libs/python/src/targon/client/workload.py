@@ -9,19 +9,7 @@ from typing import Any, Dict, Iterator, List, Optional, Sequence, Union
 import requests
 from requests.adapters import HTTPAdapter
 
-from targon.client.constants import (
-    DEFAULT_BASE_URL,
-    WORKLOAD_DEPLOY_ENDPOINT,
-    WORKLOAD_DETAIL_ENDPOINT,
-    WORKLOAD_EVENTS_ENDPOINT,
-    WORKLOAD_EXEC_ENDPOINT,
-    WORKLOAD_LOGS_ENDPOINT,
-    WORKLOAD_SSH_KEY_ENDPOINT,
-    WORKLOAD_STATE_ENDPOINT,
-    WORKLOAD_VERIFY_ENDPOINT,
-    WORKLOAD_VOLUME_ENDPOINT,
-    WORKLOADS_ENDPOINT,
-)
+from targon.client.constants import org_path
 from targon.core.exceptions import (
     APIError,
     HydrationError,
@@ -32,9 +20,10 @@ from targon.core.exceptions import (
 from targon.core.objects import BaseHTTPClient
 
 # Workload states from which a workload will not become ready on its own.
-TERMINAL_WORKLOAD_STATES = frozenset(
-    {"failed", "error", "stopped", "deleted", "terminated"}
-)
+TERMINAL_WORKLOAD_STATES = frozenset({"error", "suspended", "deleted"})
+VALID_WORKLOAD_TYPES = frozenset({"RENTAL", "VM"})
+DEPRECATED_WORKLOAD_TYPES = frozenset({"SERVERLESS", "INFERENCE", "FUNCTION"})
+VALID_LOG_TYPES = frozenset({"serial", "qemu"})
 
 # Maximum total byte length of exec command arguments. The Linux ARG_MAX is
 # typically 2**17; we keep some headroom to avoid "Argument list too long".
@@ -60,7 +49,31 @@ def _require_dict(data: Any, *, source: str, object_type: str) -> Dict[str, Any]
     return data
 
 
-@dataclass(slots=True)
+def _validate_absolute_path(value: Optional[str], field_name: str) -> str:
+    path = _validate_non_empty(value, field_name)
+    if not path.startswith("/"):
+        raise ValidationError(
+            f"{field_name} must be an absolute path starting with '/'",
+            field=field_name,
+            value=value,
+        )
+    return path
+
+
+def _normalize_log_type(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    normalized = _validate_non_empty(value, "log_type").lower()
+    if normalized not in VALID_LOG_TYPES:
+        raise ValidationError(
+            "log_type must be one of qemu, serial",
+            field="log_type",
+            value=value,
+        )
+    return normalized
+
+
+@dataclass
 class EnvVar:
     name: str
     value: str
@@ -68,8 +81,12 @@ class EnvVar:
     def to_payload(self) -> Dict[str, str]:
         return {"name": self.name, "value": self.value}
 
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> EnvVar:
+        return cls(name=data.get("name", ""), value=data.get("value", ""))
 
-@dataclass(slots=True)
+
+@dataclass
 class PortConfig:
     port: int
     protocol: str = "TCP"
@@ -83,8 +100,16 @@ class PortConfig:
             payload["routing"] = self.routing
         return payload
 
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> PortConfig:
+        return cls(
+            port=data.get("port", 0),
+            protocol=data.get("protocol", "TCP"),
+            routing=data.get("routing", "PROXIED"),
+        )
 
-@dataclass(slots=True)
+
+@dataclass
 class RegistryAuth:
     server: str
     username: str
@@ -97,8 +122,30 @@ class RegistryAuth:
             "password": _validate_non_empty(self.password, "password"),
         }
 
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> RegistryAuth:
+        return cls(
+            server=data.get("server", ""),
+            username=data.get("username", ""),
+            password=data.get("password", ""),
+        )
 
-@dataclass(slots=True)
+
+@dataclass
+class VmConfig:
+    password: str
+
+    def to_payload(self) -> Dict[str, str]:
+        password = _validate_non_empty(self.password, "vm_config.password")
+        if len(password) < 4:
+            raise ValidationError(
+                "vm_config.password must be at least 4 characters",
+                field="vm_config.password",
+            )
+        return {"password": password}
+
+
+@dataclass
 class VolumeMount:
     uid: str
     mount_path: str
@@ -106,10 +153,47 @@ class VolumeMount:
 
     def to_payload(self) -> Dict[str, Any]:
         return {
-            "uid": self.uid,
-            "mount_path": self.mount_path,
+            "uid": _validate_non_empty(self.uid, "volume.uid"),
+            "mount_path": _validate_absolute_path(
+                self.mount_path,
+                "volume.mount_path",
+            ),
             "read_only": self.read_only,
         }
+
+
+@dataclass
+class WorkloadVolumeMount:
+    uid: str
+    name: str = ""
+    mount_path: str = ""
+    read_only: bool = False
+    last_backup_at: Optional[str] = None
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> WorkloadVolumeMount:
+        return cls(
+            uid=data.get("uid", ""),
+            name=data.get("name", ""),
+            mount_path=data.get("mount_path", ""),
+            read_only=data.get("read_only", False),
+            last_backup_at=data.get("last_backup_at"),
+        )
+
+
+@dataclass
+class WorkloadSshKey:
+    uid: str
+    name: str = ""
+    public_key: str = ""
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> WorkloadSshKey:
+        return cls(
+            uid=data.get("uid", ""),
+            name=data.get("name", ""),
+            public_key=data.get("public_key_raw", ""),
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -138,7 +222,7 @@ def _coerce_env(
     raise ValidationError("env must be a dict or sequence of EnvVar", field="env")
 
 
-@dataclass(slots=True)
+@dataclass
 class CreateWorkloadRequest:
     name: str
     image: str
@@ -152,13 +236,52 @@ class CreateWorkloadRequest:
     registry_auth: Optional[RegistryAuth] = None
     volumes: Optional[List[VolumeMount]] = None
     ssh_keys: Optional[List[str]] = None
+    vm_config: Optional[VmConfig] = None
 
     def to_payload(self) -> Dict[str, Any]:
+        workload_type = _validate_non_empty(self.type, "type").upper()
+        if workload_type in DEPRECATED_WORKLOAD_TYPES:
+            raise ValidationError(
+                f"workload type {workload_type} has been deprecated",
+                field="type",
+                value=self.type,
+            )
+        if workload_type not in VALID_WORKLOAD_TYPES:
+            raise ValidationError(
+                "type must be one of RENTAL, VM",
+                field="type",
+                value=self.type,
+            )
+        if workload_type == "VM":
+            if self.vm_config is None:
+                raise ValidationError(
+                    "vm_config is required for VM workloads",
+                    field="vm_config",
+                )
+            unsupported = {
+                "commands": self.commands,
+                "args": self.args,
+                "envs": self.envs,
+                "volumes": self.volumes,
+                "registry_auth": self.registry_auth,
+            }
+            for field_name, value in unsupported.items():
+                if value:
+                    raise ValidationError(
+                        f"{field_name} is not supported for VM workloads",
+                        field=field_name,
+                    )
+        elif self.vm_config is not None:
+            raise ValidationError(
+                "vm_config is only valid for VM workloads",
+                field="vm_config",
+            )
+
         payload: Dict[str, Any] = {
             "name": _validate_non_empty(self.name, "name"),
             "image": _validate_non_empty(self.image, "image"),
             "resource_name": _validate_non_empty(self.resource_name, "resource_name"),
-            "type": self.type.upper(),
+            "type": workload_type,
         }
         if self.project_id:
             payload["project_id"] = self.project_id
@@ -177,11 +300,13 @@ class CreateWorkloadRequest:
             payload["volumes"] = [v.to_payload() for v in self.volumes]
         if self.ssh_keys:
             payload["ssh_keys"] = self.ssh_keys
+        if self.vm_config:
+            payload["vm_config"] = self.vm_config.to_payload()
 
         return payload
 
 
-@dataclass(slots=True)
+@dataclass
 class UpdateWorkloadRequest:
     name: Optional[str] = None
     image: Optional[str] = None
@@ -220,19 +345,21 @@ class UpdateWorkloadRequest:
         return payload
 
 
-@dataclass(slots=True)
+@dataclass
 class WorkloadURL:
     port: int
     url: str
 
 
-@dataclass(slots=True)
+@dataclass
 class WorkloadState:
     status: str = ""
     message: str = ""
     ready_replicas: int = 0
     total_replicas: int = 0
     urls: List[WorkloadURL] = field(default_factory=list)
+    public_ip: Optional[str] = None
+    ssh_port: Optional[int] = None
 
     @classmethod
     def from_dict(cls, data: Optional[Dict[str, Any]]) -> WorkloadState:
@@ -250,10 +377,12 @@ class WorkloadState:
             ready_replicas=data.get("ready_replicas", 0),
             total_replicas=data.get("total_replicas", 0),
             urls=urls,
+            public_ip=data.get("public_ip"),
+            ssh_port=data.get("ssh_port"),
         )
 
 
-@dataclass(slots=True)
+@dataclass
 class WorkloadResource:
     name: str = ""
     display_name: str = ""
@@ -261,6 +390,8 @@ class WorkloadResource:
     gpu_count: Optional[int] = None
     vcpu: int = 0
     memory: int = 0
+    disk_size_mib: Optional[int] = None
+    network_mode: Optional[str] = None
 
     @classmethod
     def from_dict(cls, data: Optional[Dict[str, Any]]) -> Optional[WorkloadResource]:
@@ -273,10 +404,12 @@ class WorkloadResource:
             gpu_count=data.get("gpu_count"),
             vcpu=data.get("vcpu", 0),
             memory=data.get("memory", 0),
+            disk_size_mib=data.get("disk_size_mib"),
+            network_mode=data.get("network_mode"),
         )
 
 
-@dataclass(slots=True)
+@dataclass
 class WorkloadResponse:
     uid: str
     name: str = ""
@@ -284,12 +417,13 @@ class WorkloadResponse:
     type: str = ""
     resource_name: str = ""
     project_id: Optional[str] = None
-    ports: List[Dict[str, Any]] = field(default_factory=list)
-    envs: List[Dict[str, str]] = field(default_factory=list)
+    ports: List[PortConfig] = field(default_factory=list)
+    envs: List[EnvVar] = field(default_factory=list)
     commands: Optional[List[str]] = None
     args: Optional[List[str]] = None
-    volumes: List[Dict[str, Any]] = field(default_factory=list)
-    ssh_keys: List[Any] = field(default_factory=list)
+    volumes: List[WorkloadVolumeMount] = field(default_factory=list)
+    ssh_keys: List[WorkloadSshKey] = field(default_factory=list)
+    registry_auth: Optional[RegistryAuth] = None
     state: Optional[WorkloadState] = None
     resource: Optional[WorkloadResource] = None
     cost_per_hour: Optional[float] = None
@@ -314,12 +448,33 @@ class WorkloadResponse:
             type=data.get("type", ""),
             resource_name=data.get("resource_name", ""),
             project_id=data.get("project_id"),
-            ports=data.get("ports") or [],
-            envs=data.get("envs") or [],
+            ports=[
+                PortConfig.from_dict(item)
+                for item in data.get("ports") or []
+                if isinstance(item, dict)
+            ],
+            envs=[
+                EnvVar.from_dict(item)
+                for item in data.get("envs") or []
+                if isinstance(item, dict)
+            ],
             commands=data.get("commands"),
             args=data.get("args"),
-            volumes=data.get("volumes") or [],
-            ssh_keys=data.get("ssh_keys") or [],
+            volumes=[
+                WorkloadVolumeMount.from_dict(item)
+                for item in data.get("volumes") or []
+                if isinstance(item, dict)
+            ],
+            ssh_keys=[
+                WorkloadSshKey.from_dict(item)
+                for item in data.get("ssh_keys") or []
+                if isinstance(item, dict)
+            ],
+            registry_auth=(
+                RegistryAuth.from_dict(data["registry_auth"])
+                if isinstance(data.get("registry_auth"), dict)
+                else None
+            ),
             state=WorkloadState.from_dict(data.get("state")),
             resource=WorkloadResource.from_dict(data.get("resource")),
             cost_per_hour=data.get("cost_per_hour"),
@@ -329,16 +484,17 @@ class WorkloadResponse:
         )
 
 
-@dataclass(slots=True)
+@dataclass
 class WorkloadListItem:
     uid: str
     name: str = ""
     image: str = ""
+    type: str = ""
     state: Optional[WorkloadState] = None
     resource: Optional[WorkloadResource] = None
     cost_per_hour: Optional[float] = None
     revision: str = ""
-    volumes: List[Dict[str, Any]] = field(default_factory=list)
+    volumes: List[WorkloadVolumeMount] = field(default_factory=list)
     created_at: str = ""
     updated_at: str = ""
 
@@ -356,17 +512,22 @@ class WorkloadListItem:
             uid=uid,
             name=data.get("name", ""),
             image=data.get("image", ""),
+            type=data.get("type", ""),
             state=WorkloadState.from_dict(data.get("state")),
             resource=WorkloadResource.from_dict(data.get("resource")),
             cost_per_hour=data.get("cost_per_hour"),
             revision=data.get("revision", ""),
-            volumes=data.get("volumes") or [],
+            volumes=[
+                WorkloadVolumeMount.from_dict(item)
+                for item in data.get("volumes") or []
+                if isinstance(item, dict)
+            ],
             created_at=data.get("created_at", ""),
             updated_at=data.get("updated_at", ""),
         )
 
 
-@dataclass(slots=True)
+@dataclass
 class WorkloadListResponse:
     items: List[WorkloadListItem] = field(default_factory=list)
     next_cursor: Optional[str] = None
@@ -392,16 +553,17 @@ class WorkloadListResponse:
         )
 
 
-@dataclass(slots=True)
+@dataclass
 class WorkloadDeployResponse:
     uid: str
     name: str = ""
     image: str = ""
+    type: str = ""
     state: Optional[WorkloadState] = None
     resource: Optional[WorkloadResource] = None
     cost_per_hour: Optional[float] = None
     revision: str = ""
-    volumes: List[Dict[str, Any]] = field(default_factory=list)
+    volumes: List[WorkloadVolumeMount] = field(default_factory=list)
     created_at: str = ""
     updated_at: str = ""
 
@@ -419,17 +581,25 @@ class WorkloadDeployResponse:
             uid=uid,
             name=data.get("name", ""),
             image=data.get("image", ""),
+            type=data.get("type", ""),
             state=WorkloadState.from_dict(data.get("state")),
             resource=WorkloadResource.from_dict(data.get("resource")),
             cost_per_hour=data.get("cost_per_hour"),
             revision=data.get("revision", ""),
-            volumes=data.get("volumes") or [],
+            volumes=[
+                WorkloadVolumeMount.from_dict(item)
+                for item in data.get("volumes") or []
+                if isinstance(item, dict)
+            ],
             created_at=data.get("created_at", ""),
             updated_at=data.get("updated_at", ""),
         )
 
 
-@dataclass(slots=True)
+WorkloadOperationResponse = WorkloadDeployResponse
+
+
+@dataclass
 class WorkloadStateResponse:
     uid: str
     workload_type: str = ""
@@ -438,6 +608,8 @@ class WorkloadStateResponse:
     ready_replicas: int = 0
     total_replicas: int = 0
     urls: List[WorkloadURL] = field(default_factory=list)
+    public_ip: Optional[str] = None
+    ssh_port: Optional[int] = None
     updated_at: str = ""
 
     @classmethod
@@ -464,11 +636,13 @@ class WorkloadStateResponse:
             ready_replicas=data.get("ready_replicas", 0),
             total_replicas=data.get("total_replicas", 0),
             urls=urls,
+            public_ip=data.get("public_ip"),
+            ssh_port=data.get("ssh_port"),
             updated_at=data.get("updated_at", ""),
         )
 
 
-@dataclass(slots=True)
+@dataclass
 class WorkloadEvent:
     workload_uid: str
     workload_type: str = ""
@@ -482,6 +656,7 @@ class WorkloadEvent:
     container_image: Optional[str] = None
     exit_code: Optional[int] = None
     replica_count: Optional[int] = None
+    old_replica_count: Optional[int] = None
     resource_name: Optional[str] = None
     created_at: str = ""
 
@@ -501,12 +676,13 @@ class WorkloadEvent:
             container_image=data.get("container_image"),
             exit_code=data.get("exit_code"),
             replica_count=data.get("replica_count"),
+            old_replica_count=data.get("old_replica_count"),
             resource_name=data.get("resource_name"),
             created_at=data.get("created_at", ""),
         )
 
 
-@dataclass(slots=True)
+@dataclass
 class WorkloadEventsResponse:
     items: List[WorkloadEvent] = field(default_factory=list)
     next_cursor: Optional[str] = None
@@ -528,7 +704,7 @@ class WorkloadEventsResponse:
         )
 
 
-@dataclass(slots=True)
+@dataclass
 class VolumeMountResponse:
     workload_uid: str
     uid: str
@@ -548,7 +724,7 @@ class VolumeMountResponse:
         )
 
 
-@dataclass(slots=True)
+@dataclass
 class SshKeyAttachResponse:
     workload_uid: str
     ssh_key_uid: str
@@ -564,7 +740,7 @@ class SshKeyAttachResponse:
         )
 
 
-@dataclass(slots=True)
+@dataclass
 class ExecResponse:
     """Result of running a command inside a workload via ``exec``.
 
@@ -582,19 +758,37 @@ class ExecResponse:
         return self.result
 
 
+@dataclass
+class VmImage:
+    name: str
+    display_name: str
+    description: str = ""
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> VmImage:
+        data = _require_dict(data, source="VM image", object_type="VmImage")
+        return cls(
+            name=data.get("name", ""),
+            display_name=data.get("display_name", ""),
+            description=data.get("description", ""),
+        )
+
+
 class WorkloadClient(BaseHTTPClient):
-    def __init__(self, client):
-        super().__init__(client)
-        self.base_url = DEFAULT_BASE_URL
+    def _path(self, *parts: str) -> str:
+        path = org_path(self.client.require_org(), "workloads")
+        if parts:
+            path = f"{path}/{'/'.join(parts)}"
+        return path
 
     def create(self, request: CreateWorkloadRequest) -> WorkloadResponse:
         payload = request.to_payload()
-        result = self._post(WORKLOADS_ENDPOINT, json=payload)
+        result = self._post(self._path(), json=payload)
         return WorkloadResponse.from_dict(result)
 
     def get(self, workload_uid: str) -> WorkloadResponse:
         workload_uid = _validate_non_empty(workload_uid, "workload_uid")
-        result = self._get(WORKLOAD_DETAIL_ENDPOINT.format(workload_uid=workload_uid))
+        result = self._get(self._path(workload_uid))
         return WorkloadResponse.from_dict(result)
 
     def list(
@@ -620,7 +814,7 @@ class WorkloadClient(BaseHTTPClient):
             params["limit"] = limit
         if cursor is not None:
             params["cursor"] = cursor
-        result = self._get(WORKLOADS_ENDPOINT, params=params or None)
+        result = self._get(self._path(), params=params or None)
         return WorkloadListResponse.from_dict(result)
 
     def update(
@@ -628,23 +822,33 @@ class WorkloadClient(BaseHTTPClient):
     ) -> WorkloadResponse:
         workload_uid = _validate_non_empty(workload_uid, "workload_uid")
         result = self._patch(
-            WORKLOAD_DETAIL_ENDPOINT.format(workload_uid=workload_uid),
+            self._path(workload_uid),
             json=request.to_payload(),
         )
         return WorkloadResponse.from_dict(result)
 
     def delete(self, workload_uid: str) -> None:
         workload_uid = _validate_non_empty(workload_uid, "workload_uid")
-        self._delete(WORKLOAD_DETAIL_ENDPOINT.format(workload_uid=workload_uid))
+        self._delete(self._path(workload_uid))
 
     def deploy(self, workload_uid: str) -> WorkloadDeployResponse:
         workload_uid = _validate_non_empty(workload_uid, "workload_uid")
-        result = self._post(WORKLOAD_DEPLOY_ENDPOINT.format(workload_uid=workload_uid))
+        result = self._post(self._path(workload_uid, "deploy"))
+        return WorkloadDeployResponse.from_dict(result)
+
+    def suspend(self, workload_uid: str) -> WorkloadDeployResponse:
+        workload_uid = _validate_non_empty(workload_uid, "workload_uid")
+        result = self._post(self._path(workload_uid, "suspend"))
+        return WorkloadDeployResponse.from_dict(result)
+
+    def reboot(self, workload_uid: str) -> WorkloadDeployResponse:
+        workload_uid = _validate_non_empty(workload_uid, "workload_uid")
+        result = self._post(self._path(workload_uid, "reboot"))
         return WorkloadDeployResponse.from_dict(result)
 
     def get_state(self, workload_uid: str) -> WorkloadStateResponse:
         workload_uid = _validate_non_empty(workload_uid, "workload_uid")
-        result = self._get(WORKLOAD_STATE_ENDPOINT.format(workload_uid=workload_uid))
+        result = self._get(self._path(workload_uid, "state"))
         return WorkloadStateResponse.from_dict(result)
 
     def wait_until_ready(
@@ -660,8 +864,8 @@ class WorkloadClient(BaseHTTPClient):
         running.
 
         Raises:
-            TargonError: if the workload reaches a terminal state (failed,
-                stopped, etc.) before becoming ready.
+            TargonError: if the workload reaches an error, suspended, or
+                deleted state before becoming ready.
             TimeoutError: if the workload is not ready within ``timeout``
                 seconds.
         """
@@ -699,7 +903,7 @@ class WorkloadClient(BaseHTTPClient):
         if cursor:
             params["cursor"] = cursor
         result = self._get(
-            WORKLOAD_EVENTS_ENDPOINT.format(workload_uid=workload_uid),
+            self._path(workload_uid, "events"),
             params=params or None,
         )
         return WorkloadEventsResponse.from_dict(result)
@@ -711,6 +915,7 @@ class WorkloadClient(BaseHTTPClient):
         since: Optional[str] = None,
         tail: Optional[int] = None,
         previous: bool = False,
+        log_type: Optional[str] = None,
     ) -> str:
         workload_uid = _validate_non_empty(workload_uid, "workload_uid")
         params: Dict[str, Any] = {}
@@ -720,8 +925,11 @@ class WorkloadClient(BaseHTTPClient):
             params["tail"] = tail
         if previous:
             params["previous"] = "true"
+        normalized_log_type = _normalize_log_type(log_type)
+        if normalized_log_type is not None:
+            params["type"] = normalized_log_type
         result = self._get(
-            WORKLOAD_LOGS_ENDPOINT.format(workload_uid=workload_uid),
+            self._path(workload_uid, "logs"),
             params=params or None,
         )
         if isinstance(result, str):
@@ -795,15 +1003,25 @@ class WorkloadClient(BaseHTTPClient):
         workload_uid: str,
         *,
         follow: bool = True,
+        since: Optional[str] = None,
+        tail: Optional[int] = None,
         previous: bool = False,
+        log_type: Optional[str] = None,
     ) -> Iterator[str]:
         workload_uid = _validate_non_empty(workload_uid, "workload_uid")
         params: Dict[str, str] = {"follow": str(follow).lower()}
+        if since is not None:
+            params["since"] = since
+        if tail is not None:
+            params["tail"] = str(tail)
         if previous:
             params["previous"] = "true"
+        normalized_log_type = _normalize_log_type(log_type)
+        if normalized_log_type is not None:
+            params["type"] = normalized_log_type
         yield from self._stream_text(
             "GET",
-            WORKLOAD_LOGS_ENDPOINT.format(workload_uid=workload_uid),
+            self._path(workload_uid, "logs"),
             params=params,
             error_label="logs endpoint",
         )
@@ -836,7 +1054,7 @@ class WorkloadClient(BaseHTTPClient):
         params = [("command", arg) for arg in argv]
         yield from self._stream_text(
             "POST",
-            WORKLOAD_EXEC_ENDPOINT.format(workload_uid=workload_uid),
+            self._path(workload_uid, "exec"),
             params=params,
             timeout=(10, timeout),
             error_label="exec endpoint",
@@ -898,11 +1116,20 @@ class WorkloadClient(BaseHTTPClient):
         uid = _validate_non_empty(uid, "uid")
         digest = _validate_non_empty(digest, "digest")
         result = self._post(
-            WORKLOAD_VERIFY_ENDPOINT,
+            self._path("verify"),
             json={"uid": uid, "digest": digest},
         )
         data = _require_dict(result, source="verify", object_type="VerifyResponse")
         return bool(data.get("verified", False))
+
+    def vm_images(self) -> List[VmImage]:
+        result = self._get(self._path("vm-images"))
+        if not isinstance(result, list):
+            raise HydrationError(
+                f"Expected list for VM images, got {type(result).__name__}",
+                object_type="VmImage",
+            )
+        return [VmImage.from_dict(item) for item in result if isinstance(item, dict)]
 
     def attach_volume(
         self,
@@ -913,11 +1140,9 @@ class WorkloadClient(BaseHTTPClient):
     ) -> VolumeMountResponse:
         workload_uid = _validate_non_empty(workload_uid, "workload_uid")
         volume_uid = _validate_non_empty(volume_uid, "volume_uid")
-        mount_path = _validate_non_empty(mount_path, "mount_path")
+        mount_path = _validate_absolute_path(mount_path, "mount_path")
         result = self._put(
-            WORKLOAD_VOLUME_ENDPOINT.format(
-                workload_uid=workload_uid, volume_uid=volume_uid
-            ),
+            self._path(workload_uid, "volumes", volume_uid),
             json={"mount_path": mount_path, "read_only": read_only},
         )
         return VolumeMountResponse.from_dict(result)
@@ -925,11 +1150,7 @@ class WorkloadClient(BaseHTTPClient):
     def detach_volume(self, workload_uid: str, volume_uid: str) -> None:
         workload_uid = _validate_non_empty(workload_uid, "workload_uid")
         volume_uid = _validate_non_empty(volume_uid, "volume_uid")
-        self._delete(
-            WORKLOAD_VOLUME_ENDPOINT.format(
-                workload_uid=workload_uid, volume_uid=volume_uid
-            )
-        )
+        self._delete(self._path(workload_uid, "volumes", volume_uid))
 
     def attach_ssh_key(
         self, workload_uid: str, ssh_key_uid: str
@@ -937,17 +1158,11 @@ class WorkloadClient(BaseHTTPClient):
         workload_uid = _validate_non_empty(workload_uid, "workload_uid")
         ssh_key_uid = _validate_non_empty(ssh_key_uid, "ssh_key_uid")
         result = self._put(
-            WORKLOAD_SSH_KEY_ENDPOINT.format(
-                workload_uid=workload_uid, ssh_key_uid=ssh_key_uid
-            ),
+            self._path(workload_uid, "ssh-keys", ssh_key_uid),
         )
         return SshKeyAttachResponse.from_dict(result)
 
     def detach_ssh_key(self, workload_uid: str, ssh_key_uid: str) -> None:
         workload_uid = _validate_non_empty(workload_uid, "workload_uid")
         ssh_key_uid = _validate_non_empty(ssh_key_uid, "ssh_key_uid")
-        self._delete(
-            WORKLOAD_SSH_KEY_ENDPOINT.format(
-                workload_uid=workload_uid, ssh_key_uid=ssh_key_uid
-            )
-        )
+        self._delete(self._path(workload_uid, "ssh-keys", ssh_key_uid))

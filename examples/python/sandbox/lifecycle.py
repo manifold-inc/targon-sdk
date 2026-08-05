@@ -1,7 +1,14 @@
+import os
+
 import targon
 
 print("Creating sandbox")
-s = targon.Sandbox.create(image="ubuntu", resource=targon.Resources.H100_MEDIUM, keep_alive=True)
+s = targon.Sandbox.create(
+    image="ubuntu",
+    resource=targon.Resources.H100_MEDIUM,
+    keep_alive=True,
+    org=os.environ["TARGON_ORG"],
+)
 print(f"Sandbox created ({s.id})")
 
 response = s.exec('apt update && apt install -y wget', timeout=10)

@@ -11,7 +11,10 @@ pub use pagination::{List, Page};
 
 use std::time::Duration;
 
-use api::{InventoryApi, Projects, SshKeys, User, VersionApi, Volumes, Workloads};
+use api::{
+    ApiTokens, CreditsApi, InventoryApi, Members, Orgs, Projects, ServiceTokens, SshKeys,
+    VersionApi, Volumes, WalletApi, Workloads,
+};
 use http::HttpClient;
 
 #[derive(Debug, Clone)]
@@ -30,28 +33,48 @@ impl Client {
         ClientBuilder::default()
     }
 
-    pub fn workloads(&self) -> Workloads {
-        Workloads::new(self.http.clone())
+    pub fn workloads(&self, org: impl Into<String>) -> Workloads {
+        Workloads::new(self.http.clone(), org)
     }
 
-    pub fn volumes(&self) -> Volumes {
-        Volumes::new(self.http.clone())
+    pub fn volumes(&self, org: impl Into<String>) -> Volumes {
+        Volumes::new(self.http.clone(), org)
     }
 
-    pub fn ssh_keys(&self) -> SshKeys {
-        SshKeys::new(self.http.clone())
+    pub fn ssh_keys(&self, org: impl Into<String>) -> SshKeys {
+        SshKeys::new(self.http.clone(), org)
     }
 
-    pub fn projects(&self) -> Projects {
-        Projects::new(self.http.clone())
+    pub fn projects(&self, org: impl Into<String>) -> Projects {
+        Projects::new(self.http.clone(), org)
+    }
+
+    pub fn orgs(&self) -> Orgs {
+        Orgs::new(self.http.clone())
+    }
+
+    pub fn members(&self, org: impl Into<String>) -> Members {
+        Members::new(self.http.clone(), org)
+    }
+
+    pub fn service_tokens(&self, org: impl Into<String>) -> ServiceTokens {
+        ServiceTokens::new(self.http.clone(), org)
+    }
+
+    pub fn api_tokens(&self) -> ApiTokens {
+        ApiTokens::new(self.http.clone())
+    }
+
+    pub fn wallet(&self, org: impl Into<String>) -> WalletApi {
+        WalletApi::new(self.http.clone(), org)
+    }
+
+    pub fn credits(&self, org: impl Into<String>) -> CreditsApi {
+        CreditsApi::new(self.http.clone(), org)
     }
 
     pub fn inventory(&self) -> InventoryApi {
         InventoryApi::new(self.http.clone())
-    }
-
-    pub fn user(&self) -> User {
-        User::new(self.http.clone())
     }
 
     pub fn version(&self) -> VersionApi {

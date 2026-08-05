@@ -3,7 +3,9 @@ use std::io::IsTerminal;
 use colored::Colorize;
 use comfy_table::modifiers::UTF8_ROUND_CORNERS;
 use comfy_table::presets::UTF8_FULL;
-use comfy_table::{Attribute, Cell, Color, ContentArrangement, Table, TableComponent};
+use comfy_table::{
+    Attribute, Cell, CellAlignment, Color, ContentArrangement, Table, TableComponent,
+};
 
 use crate::output::format::{self, StateKind};
 use crate::output::{palettes, style};
@@ -32,7 +34,8 @@ pub fn table(headers: &[&str]) -> Table {
     table.set_header(headers.iter().map(|h| {
         let cell = Cell::new(h.to_uppercase());
         if palettes::colors_enabled() {
-            cell.fg(rgb(palettes::HEADER)).add_attribute(Attribute::Bold)
+            cell.fg(rgb(palettes::HEADER))
+                .add_attribute(Attribute::Bold)
         } else {
             cell
         }
@@ -78,6 +81,64 @@ pub fn type_cell(workload_type: &str) -> Cell {
         workload_type.to_string(),
         palettes::workload_type_color(workload_type),
     )
+}
+
+/// Team organizations are bright cyan; the personal organization is dim.
+pub fn org_type_cell(org_type: &str) -> Cell {
+    colored_cell(
+        org_type.to_ascii_uppercase(),
+        palettes::org_type_color(org_type),
+    )
+}
+
+/// Active organization marker shown in its own narrow column.
+pub fn active_org_cell(active: bool) -> Cell {
+    if active {
+        colored_cell("➜".to_string(), palettes::ACCENT)
+    } else {
+        Cell::new("")
+    }
+}
+
+/// Only the active organization slug is highlighted.
+pub fn org_slug_cell(slug: &str, active: bool) -> Cell {
+    if active {
+        colored_cell(slug.to_string(), palettes::ACCENT)
+    } else {
+        Cell::new(slug)
+    }
+}
+
+/// Organization membership role, emphasizing roles with management access.
+pub fn org_role_cell(role: &str) -> Cell {
+    let color = match role.to_ascii_uppercase().as_str() {
+        "OWNER" => palettes::SUCCESS,
+        "ADMIN" => palettes::ACCENT,
+        _ => palettes::DIM,
+    };
+    colored_cell(role.to_ascii_lowercase(), color)
+}
+
+/// Member list roles carry permission-rank color weight.
+pub fn member_role_cell(role: &str) -> Cell {
+    let color = match role.to_ascii_uppercase().as_str() {
+        "OWNER" => palettes::WARN,
+        "ADMIN" => palettes::ACCENT,
+        _ => palettes::DIM,
+    };
+    colored_cell(role.to_ascii_lowercase(), color)
+}
+
+/// Organization credits are returned by the API as USD.
+pub fn org_credits_cell(credits: f64) -> Cell {
+    let color = if credits <= 0.0 {
+        palettes::ERROR
+    } else if credits < 25.0 {
+        palettes::WARN
+    } else {
+        palettes::SUCCESS
+    };
+    colored_cell(format!("${credits:.2}"), color).set_alignment(CellAlignment::Right)
 }
 
 /// State as a colored dot + word, e.g. `● running`. Piped output drops the

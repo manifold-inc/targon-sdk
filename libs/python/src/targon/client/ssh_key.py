@@ -3,11 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-from targon.client.constants import (
-    DEFAULT_BASE_URL,
-    SSH_KEY_DETAIL_ENDPOINT,
-    SSH_KEYS_ENDPOINT,
-)
+from targon.client.constants import org_path
 from targon.core.exceptions import HydrationError, ValidationError
 from targon.core.objects import BaseHTTPClient
 
@@ -31,7 +27,7 @@ def _require_dict(data: Any, *, source: str, object_type: str) -> Dict[str, Any]
     return data
 
 
-@dataclass(slots=True)
+@dataclass
 class SshKey:
     uid: str
     name: str = ""
@@ -56,7 +52,7 @@ class SshKey:
         )
 
 
-@dataclass(slots=True)
+@dataclass
 class SshKeyListResponse:
     items: List[SshKey] = field(default_factory=list)
     next_cursor: Optional[str] = None
@@ -81,15 +77,17 @@ class SshKeyListResponse:
 
 
 class SshKeyClient(BaseHTTPClient):
-    def __init__(self, client):
-        super().__init__(client)
-        self.base_url = DEFAULT_BASE_URL
+    def _path(self, ssh_key_uid: Optional[str] = None) -> str:
+        path = org_path(self.client.require_org(), "ssh-keys")
+        if ssh_key_uid is not None:
+            path = f"{path}/{ssh_key_uid}"
+        return path
 
     def create(self, name: str, ssh_key: str) -> SshKey:
         name = _validate_non_empty(name, "name")
         ssh_key = _validate_non_empty(ssh_key, "ssh_key")
         result = self._post(
-            SSH_KEYS_ENDPOINT,
+            self._path(),
             json={"name": name, "ssh_key": ssh_key},
         )
         return SshKey.from_dict(result)
@@ -102,23 +100,23 @@ class SshKeyClient(BaseHTTPClient):
             params["limit"] = limit
         if cursor:
             params["cursor"] = cursor
-        result = self._get(SSH_KEYS_ENDPOINT, params=params or None)
+        result = self._get(self._path(), params=params or None)
         return SshKeyListResponse.from_dict(result)
 
     def get(self, ssh_key_uid: str) -> SshKey:
         ssh_key_uid = _validate_non_empty(ssh_key_uid, "ssh_key_uid")
-        result = self._get(SSH_KEY_DETAIL_ENDPOINT.format(ssh_key_uid=ssh_key_uid))
+        result = self._get(self._path(ssh_key_uid))
         return SshKey.from_dict(result)
 
     def update(self, ssh_key_uid: str, name: str) -> SshKey:
         ssh_key_uid = _validate_non_empty(ssh_key_uid, "ssh_key_uid")
         name = _validate_non_empty(name, "name")
         result = self._patch(
-            SSH_KEY_DETAIL_ENDPOINT.format(ssh_key_uid=ssh_key_uid),
+            self._path(ssh_key_uid),
             json={"name": name},
         )
         return SshKey.from_dict(result)
 
     def delete(self, ssh_key_uid: str) -> None:
         ssh_key_uid = _validate_non_empty(ssh_key_uid, "ssh_key_uid")
-        self._delete(SSH_KEY_DETAIL_ENDPOINT.format(ssh_key_uid=ssh_key_uid))
+        self._delete(self._path(ssh_key_uid))

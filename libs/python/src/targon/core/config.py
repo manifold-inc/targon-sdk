@@ -1,13 +1,15 @@
-import os
 from typing import Dict, Optional
 
 from targon.client.constants import DEFAULT_BASE_URL
+from targon.core.auth import get_api_key, get_org, get_profile
 from targon.core.exceptions import ConfigurationError
 from targon.version import __version__
 
 
 class Config:
     api_key: str
+    org: Optional[str]
+    profile: str
     base_url: str
     timeout: int
     max_retries: int
@@ -19,6 +21,8 @@ class Config:
     def __init__(
         self,
         api_key: Optional[str] = None,
+        org: Optional[str] = None,
+        profile: Optional[str] = None,
         base_url: str = DEFAULT_BASE_URL,
         timeout: int = 30,
         max_retries: int = 3,
@@ -26,7 +30,8 @@ class Config:
         user_agent: Optional[str] = None,
     ) -> None:
 
-        resolved_key = api_key or os.getenv("TARGON_API_KEY")
+        resolved_profile = get_profile(profile)
+        resolved_key = api_key or get_api_key(resolved_profile)
         if (
             not resolved_key
             or not isinstance(resolved_key, str)
@@ -54,6 +59,8 @@ class Config:
             )
 
         self.api_key = resolved_key.strip()
+        self.profile = resolved_profile
+        self.org = get_org(org, resolved_profile)
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
         self.max_retries = max_retries
@@ -67,4 +74,14 @@ class Config:
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
             "Accept": "application/json",
+            "User-Agent": self.user_agent,
         }
+
+    def require_org(self) -> str:
+        if self.org:
+            return self.org
+        raise ConfigurationError(
+            "organization is required. Pass org='your-org' to Client(), set "
+            "TARGON_ORG, or select one with `targon org use <slug>`.",
+            config_key="org",
+        )

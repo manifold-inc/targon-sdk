@@ -243,12 +243,12 @@ fn print_row(item: &Inventory) {
 
     println!(
         "  {} {} {} {} {} {} {}",
-        format!("{:<COL_SKU$}", item.name),
+        format_args!("{:<COL_SKU$}", item.name),
         type_colored,
-        format!("{gpu:<COL_GPU$}"),
-        format!("{vcpu:<COL_VCPU$}"),
-        format!("{memory:<COL_MEMORY$}"),
-        format!("{price:<COL_PRICE$}"),
+        format_args!("{gpu:<COL_GPU$}"),
+        format_args!("{vcpu:<COL_VCPU$}"),
+        format_args!("{memory:<COL_MEMORY$}"),
+        format_args!("{price:<COL_PRICE$}"),
         avail_colored,
     );
 }
@@ -337,10 +337,7 @@ fn normalize_gpu_family(gpu: &str) -> String {
         return "A6000".to_string();
     }
     // Fall back to a cleaned display of the GPU string.
-    gpu.split_whitespace()
-        .last()
-        .unwrap_or(gpu)
-        .to_string()
+    gpu.split_whitespace().last().unwrap_or(gpu).to_string()
 }
 
 fn family_from_name(name: &str) -> Option<String> {
@@ -379,7 +376,19 @@ fn family_sort_key(family: &str) -> (u8, String) {
 }
 
 fn table_width() -> usize {
-    COL_SKU + 1 + COL_TYPE + 1 + COL_GPU + 1 + COL_VCPU + 1 + COL_MEMORY + 1 + COL_PRICE + 1 + COL_AVAIL
+    COL_SKU
+        + 1
+        + COL_TYPE
+        + 1
+        + COL_GPU
+        + 1
+        + COL_VCPU
+        + 1
+        + COL_MEMORY
+        + 1
+        + COL_PRICE
+        + 1
+        + COL_AVAIL
 }
 
 fn pad_header(label: &str, width: usize) -> String {

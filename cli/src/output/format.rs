@@ -73,7 +73,10 @@ pub fn credits_badge(amount: f64, currency: &str) -> String {
     } else {
         palettes::SUCCESS
     };
-    format!("{amount:.2} {currency}").color(color).bold().to_string()
+    format!("{amount:.2} {currency}")
+        .color(color)
+        .bold()
+        .to_string()
 }
 
 pub fn print_json<T: Serialize>(value: &T) -> Result<()> {

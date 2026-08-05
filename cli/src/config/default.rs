@@ -3,6 +3,7 @@ use std::path::PathBuf;
 pub const DEFAULT_PROFILE: &str = "default";
 pub const CONFIG_FILE: &str = "config.toml";
 pub const API_KEY_ENV: &str = "TARGON_API_KEY";
+pub const ORG_ENV: &str = "TARGON_ORG";
 
 pub fn config_dir() -> PathBuf {
     dirs::home_dir()

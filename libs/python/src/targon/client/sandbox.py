@@ -68,6 +68,7 @@ class Sandbox:
         keep_alive: bool = True,
         ready_timeout: float = 300.0,
         client: Optional["Client"] = None,
+        org: Optional[str] = None,
     ) -> "Sandbox":
         """Provision and deploy a new sandbox, waiting until it is running.
 
@@ -84,10 +85,13 @@ class Sandbox:
                 the container stays up to exec into.
             ready_timeout: Seconds to wait for the workload to become ready.
             client: Optional client override; defaults to ``Client.from_env()``.
+            org: Optional organization override for this sandbox.
         """
         from targon.client.client import Client
 
-        client = client or Client.from_env()
+        client = client or Client.from_env(org=org)
+        if org is not None and client.org != org:
+            client = client.for_org(org)
 
         if command is None and keep_alive:
             command = list(KEEP_ALIVE_COMMAND)
@@ -118,11 +122,14 @@ class Sandbox:
         workload_uid: str,
         *,
         client: Optional["Client"] = None,
+        org: Optional[str] = None,
     ) -> "Sandbox":
         """Attach to an existing running workload by its UID."""
         from targon.client.client import Client
 
-        client = client or Client.from_env()
+        client = client or Client.from_env(org=org)
+        if org is not None and client.org != org:
+            client = client.for_org(org)
         return cls(workload_uid, client, _owned=False)
 
     # Alias matching the workload-centric naming.

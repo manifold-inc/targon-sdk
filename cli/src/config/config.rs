@@ -14,7 +14,9 @@ use crate::error::{CliError, Result};
 pub struct Profile {
     pub base_url: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub project: Option<String>,
+    pub org: Option<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub projects: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -30,7 +32,8 @@ impl Default for Config {
             default::DEFAULT_PROFILE.to_string(),
             Profile {
                 base_url: DEFAULT_BASE_URL.to_string(),
-                project: None,
+                org: None,
+                projects: BTreeMap::new(),
             },
         );
         Self {
@@ -44,8 +47,9 @@ impl Config {
     pub fn load() -> Result<Self> {
         let path = default::config_file();
         match fs::read_to_string(&path) {
-            Ok(contents) => toml::from_str(&contents)
-                .map_err(|e| CliError::Config(format!("invalid config at {}: {e}", path.display()))),
+            Ok(contents) => toml::from_str(&contents).map_err(|e| {
+                CliError::Config(format!("invalid config at {}: {e}", path.display()))
+            }),
             Err(e) if e.kind() == ErrorKind::NotFound => Ok(Self::default()),
             Err(e) => Err(CliError::Io(e)),
         }
@@ -53,8 +57,7 @@ impl Config {
 
     pub fn save(&self) -> Result<()> {
         fs::create_dir_all(default::config_dir())?;
-        let contents =
-            toml::to_string_pretty(self).map_err(|e| CliError::Config(e.to_string()))?;
+        let contents = toml::to_string_pretty(self).map_err(|e| CliError::Config(e.to_string()))?;
         fs::write(default::config_file(), contents)?;
         Ok(())
     }
@@ -69,18 +72,23 @@ impl Config {
 pub struct Resolved {
     pub profile: String,
     pub base_url: String,
+    pub org: Option<String>,
     pub project: Option<String>,
     pub api_key: Option<String>,
 }
 
-pub fn resolve(profile_override: Option<&str>, base_url_override: Option<&str>) -> Result<Resolved> {
+pub fn resolve(
+    profile_override: Option<&str>,
+    base_url_override: Option<&str>,
+    org_override: Option<&str>,
+) -> Result<Resolved> {
     let config = Config::load()?;
     let profile_name = profile_override
         .map(str::to_string)
         .unwrap_or_else(|| config.current.clone());
 
     // Credentials may exist without a config entry (e.g. login before this was fixed).
-    if config.profiles.get(&profile_name).is_none() && load_api_key(&profile_name).is_some() {
+    if !config.profiles.contains_key(&profile_name) && load_api_key(&profile_name).is_some() {
         ensure_profile(&profile_name, base_url_override)?;
     }
 
@@ -92,11 +100,14 @@ pub fn resolve(profile_override: Option<&str>, base_url_override: Option<&str>) 
         .unwrap_or_else(|| profile.base_url.clone());
 
     let api_key = env_api_key().or_else(|| load_api_key(&profile_name));
+    let org = resolve_org(profile, org_override, env_org().as_deref());
+    let project = project_for_org(profile, org.as_deref());
 
     Ok(Resolved {
         profile: profile_name,
         base_url,
-        project: profile.project.clone(),
+        org,
+        project,
         api_key,
     })
 }
@@ -116,7 +127,8 @@ pub fn ensure_profile(name: &str, base_url: Option<&str>) -> Result<()> {
                 name.to_string(),
                 Profile {
                     base_url: base_url.unwrap_or(DEFAULT_BASE_URL).to_string(),
-                    project: None,
+                    org: None,
+                    projects: BTreeMap::new(),
                 },
             );
             config.save()?;
@@ -125,23 +137,121 @@ pub fn ensure_profile(name: &str, base_url: Option<&str>) -> Result<()> {
     Ok(())
 }
 
-pub fn set_project(profile_override: Option<&str>, project: Option<String>) -> Result<String> {
+/// Persist the active organization for a profile.
+pub fn set_org(profile_override: Option<&str>, org: Option<String>) -> Result<String> {
     let mut config = Config::load()?;
-    let profile_name = profile_override
-        .map(str::to_string)
-        .unwrap_or_else(|| config.current.clone());
+    let profile_name = selected_profile_name(&config, profile_override);
     config.profile(&profile_name)?;
     if let Some(profile) = config.profiles.get_mut(&profile_name) {
-        profile.project = project;
+        profile.org = org;
     }
     config.save()?;
     Ok(profile_name)
+}
+
+/// Persist (or clear) the default project for one organization in a profile.
+pub fn set_project(
+    profile_override: Option<&str>,
+    org: &str,
+    project: Option<String>,
+) -> Result<String> {
+    let mut config = Config::load()?;
+    let profile_name = selected_profile_name(&config, profile_override);
+    config.profile(&profile_name)?;
+    if let Some(profile) = config.profiles.get_mut(&profile_name) {
+        match project {
+            Some(project) => {
+                profile.projects.insert(org.to_string(), project);
+            }
+            None => {
+                profile.projects.remove(org);
+            }
+        }
+    }
+    config.save()?;
+    Ok(profile_name)
+}
+
+/// Move locally persisted context when an organization slug is renamed.
+pub fn rename_org_slug(
+    profile_override: Option<&str>,
+    old_slug: &str,
+    new_slug: &str,
+) -> Result<String> {
+    let mut config = Config::load()?;
+    let profile_name = selected_profile_name(&config, profile_override);
+    config.profile(&profile_name)?;
+    if let Some(profile) = config.profiles.get_mut(&profile_name) {
+        rename_org_context(profile, old_slug, new_slug);
+    }
+    config.save()?;
+    Ok(profile_name)
+}
+
+/// Remove an organization's remembered project and clear it if it is active.
+pub fn clear_org_context(profile_override: Option<&str>, org: &str) -> Result<String> {
+    let mut config = Config::load()?;
+    let profile_name = selected_profile_name(&config, profile_override);
+    config.profile(&profile_name)?;
+    if let Some(profile) = config.profiles.get_mut(&profile_name) {
+        clear_org(profile, org);
+    }
+    config.save()?;
+    Ok(profile_name)
+}
+
+fn selected_profile_name(config: &Config, profile_override: Option<&str>) -> String {
+    profile_override
+        .map(str::to_string)
+        .unwrap_or_else(|| config.current.clone())
+}
+
+fn resolve_org(
+    profile: &Profile,
+    org_override: Option<&str>,
+    org_from_env: Option<&str>,
+) -> Option<String> {
+    org_override
+        .filter(|org| !org.is_empty())
+        .or_else(|| org_from_env.filter(|org| !org.is_empty()))
+        .map(str::to_string)
+        .or_else(|| profile.org.clone().filter(|org| !org.is_empty()))
+}
+
+fn project_for_org(profile: &Profile, org: Option<&str>) -> Option<String> {
+    org.and_then(|org_slug| profile.projects.get(org_slug))
+        .cloned()
+}
+
+fn rename_org_context(profile: &mut Profile, old_slug: &str, new_slug: &str) {
+    if old_slug == new_slug {
+        return;
+    }
+    if profile.org.as_deref() == Some(old_slug) {
+        profile.org = Some(new_slug.to_string());
+    }
+    if let Some(project) = profile.projects.remove(old_slug) {
+        profile.projects.insert(new_slug.to_string(), project);
+    }
+}
+
+fn clear_org(profile: &mut Profile, org: &str) {
+    if profile.org.as_deref() == Some(org) {
+        profile.org = None;
+    }
+    profile.projects.remove(org);
 }
 
 fn env_api_key() -> Option<String> {
     std::env::var(default::API_KEY_ENV)
         .ok()
         .filter(|k| !k.is_empty())
+}
+
+fn env_org() -> Option<String> {
+    std::env::var(default::ORG_ENV)
+        .ok()
+        .filter(|org| !org.is_empty())
 }
 
 pub fn load_api_key(profile: &str) -> Option<String> {

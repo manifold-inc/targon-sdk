@@ -3,7 +3,7 @@ use colored::Colorize;
 use comfy_table::Cell;
 
 use crate::client::pagination::Page;
-use crate::client::types::CreateVolumeRequest;
+use crate::client::types::{CreateVolumeRequest, UpdateVolumeRequest};
 use crate::commands::{self, workload, Context};
 use crate::error::Result;
 use crate::output::{format, palettes, prompt, style, table};
@@ -26,9 +26,19 @@ pub enum VolumeCommands {
     List {
         #[arg(long = "workload")]
         workload_uid: Option<String>,
+        #[arg(long, default_value_t = 50)]
+        limit: u32,
+        #[arg(long)]
+        cursor: Option<String>,
     },
     /// Show a volume
     Get { uid: String },
+    /// Rename a volume
+    Update {
+        uid: String,
+        #[arg(long)]
+        name: String,
+    },
     /// Delete a volume
     Delete {
         uid: String,
@@ -42,6 +52,8 @@ pub enum VolumeCommands {
         uid: String,
         #[arg(long, default_value_t = 20)]
         limit: u32,
+        #[arg(long)]
+        cursor: Option<String>,
     },
 }
 
@@ -53,11 +65,18 @@ pub async fn handle(ctx: &Context, cmd: &VolumeCommands) -> Result<()> {
             size,
             yes,
         } => create(ctx, name.clone(), resource.clone(), *size, *yes).await,
-        VolumeCommands::List { workload_uid } => list(ctx, workload_uid.clone()).await,
+        VolumeCommands::List {
+            workload_uid,
+            limit,
+            cursor,
+        } => list(ctx, workload_uid.clone(), *limit, cursor.clone()).await,
         VolumeCommands::Get { uid } => get(ctx, uid).await,
+        VolumeCommands::Update { uid, name } => update(ctx, uid, name).await,
         VolumeCommands::Delete { uid, yes } => delete(ctx, uid, *yes).await,
         VolumeCommands::State { uid } => state(ctx, uid).await,
-        VolumeCommands::Events { uid, limit } => events(ctx, uid, *limit).await,
+        VolumeCommands::Events { uid, limit, cursor } => {
+            events(ctx, uid, *limit, cursor.clone()).await
+        }
     }
 }
 
@@ -113,7 +132,7 @@ async fn create(
         resource_name,
         size_in_mb: size_gib * 1024,
     };
-    let volume = ctx.client.volumes().create(&req).await?;
+    let volume = ctx.client.volumes(ctx.org()?).create(&req).await?;
     if ctx.json() {
         return format::print_json(&volume);
     }
@@ -121,12 +140,20 @@ async fn create(
     Ok(())
 }
 
-async fn list(ctx: &Context, workload_uid: Option<String>) -> Result<()> {
+async fn list(
+    ctx: &Context,
+    workload_uid: Option<String>,
+    limit: u32,
+    cursor: Option<String>,
+) -> Result<()> {
     let params = crate::client::types::ListVolumesParams {
-        page: Page::default(),
+        page: Page {
+            limit: Some(limit),
+            cursor,
+        },
         workload_uid,
     };
-    let volumes = ctx.client.volumes().list(&params).await?;
+    let volumes = ctx.client.volumes(ctx.org()?).list(&params).await?;
     if ctx.json() {
         return format::print_json(&volumes);
     }
@@ -151,7 +178,12 @@ async fn list(ctx: &Context, workload_uid: Option<String>) -> Result<()> {
             Cell::new(&volume.resource_name),
             Cell::new(format::mib_to_human(volume.size)),
             table::state_cell(&status),
-            table::dim_cell(volume.workload_uid.clone().unwrap_or_else(|| "-".to_string())),
+            table::dim_cell(
+                volume
+                    .workload_uid
+                    .clone()
+                    .unwrap_or_else(|| "-".to_string()),
+            ),
         ]);
     }
     table::print(&t);
@@ -164,7 +196,7 @@ async fn list(ctx: &Context, workload_uid: Option<String>) -> Result<()> {
 }
 
 async fn get(ctx: &Context, uid: &str) -> Result<()> {
-    let volume = ctx.client.volumes().get(uid).await?;
+    let volume = ctx.client.volumes(ctx.org()?).get(uid).await?;
     if ctx.json() {
         return format::print_json(&volume);
     }
@@ -185,17 +217,35 @@ async fn get(ctx: &Context, uid: &str) -> Result<()> {
     Ok(())
 }
 
+async fn update(ctx: &Context, uid: &str, name: &str) -> Result<()> {
+    let volume = ctx
+        .client
+        .volumes(ctx.org()?)
+        .update(
+            uid,
+            &UpdateVolumeRequest {
+                name: name.to_string(),
+            },
+        )
+        .await?;
+    if ctx.json() {
+        return format::print_json(&volume);
+    }
+    style::success(format!("updated volume {}", volume.uid));
+    Ok(())
+}
+
 async fn delete(ctx: &Context, uid: &str, yes: bool) -> Result<()> {
     if prompt::is_tty() && !yes && !prompt::confirm(&format!("Delete volume {uid}?"), false)? {
         return Err(crate::error::CliError::Cancelled);
     }
-    ctx.client.volumes().delete(uid).await?;
+    ctx.client.volumes(ctx.org()?).delete(uid).await?;
     style::success(format!("deleted volume {uid}"));
     Ok(())
 }
 
 async fn state(ctx: &Context, uid: &str) -> Result<()> {
-    let state = ctx.client.volumes().state(uid).await?;
+    let state = ctx.client.volumes(ctx.org()?).state(uid).await?;
     if ctx.json() {
         return format::print_json(&state);
     }
@@ -208,12 +258,12 @@ async fn state(ctx: &Context, uid: &str) -> Result<()> {
     Ok(())
 }
 
-async fn events(ctx: &Context, uid: &str, limit: u32) -> Result<()> {
+async fn events(ctx: &Context, uid: &str, limit: u32, cursor: Option<String>) -> Result<()> {
     let page = Page {
         limit: Some(limit),
-        cursor: None,
+        cursor,
     };
-    let events = ctx.client.volumes().events(uid, &page).await?;
+    let events = ctx.client.volumes(ctx.org()?).events(uid, &page).await?;
     if ctx.json() {
         return format::print_json(&events);
     }

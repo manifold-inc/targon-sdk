@@ -1,43 +1,27 @@
 DEFAULT_BASE_URL = "https://api.targon.com"
-API_VERSION_V2 = "/tha/v2"
+API_VERSION_V3 = "/tha/v3"
 
-# Inventory
-INVENTORY_ENDPOINT = f"{API_VERSION_V2}/inventory"
 
-# Workloads
-WORKLOADS_ENDPOINT = f"{API_VERSION_V2}/workloads"
-WORKLOAD_DETAIL_ENDPOINT = f"{API_VERSION_V2}/workloads/{{workload_uid}}"
-WORKLOAD_DEPLOY_ENDPOINT = f"{API_VERSION_V2}/workloads/{{workload_uid}}/deploy"
-WORKLOAD_STATE_ENDPOINT = f"{API_VERSION_V2}/workloads/{{workload_uid}}/state"
-WORKLOAD_EVENTS_ENDPOINT = f"{API_VERSION_V2}/workloads/{{workload_uid}}/events"
-WORKLOAD_LOGS_ENDPOINT = f"{API_VERSION_V2}/workloads/{{workload_uid}}/logs"
-WORKLOAD_EXEC_ENDPOINT = f"{API_VERSION_V2}/workloads/{{workload_uid}}/exec"
-WORKLOAD_VERIFY_ENDPOINT = f"{API_VERSION_V2}/workloads/verify"
-WORKLOAD_VOLUME_ENDPOINT = (
-    f"{API_VERSION_V2}/workloads/{{workload_uid}}/volumes/{{volume_uid}}"
-)
-WORKLOAD_SSH_KEY_ENDPOINT = (
-    f"{API_VERSION_V2}/workloads/{{workload_uid}}/ssh-keys/{{ssh_key_uid}}"
-)
+def org_path(org: str, resource: str) -> str:
+    """Build a v3 path for a resource scoped to an organization."""
+    if not isinstance(org, str) or not org.strip() or "/" in org:
+        raise ValueError("org must be a non-empty organization slug")
+    if not isinstance(resource, str) or not resource.strip():
+        raise ValueError("resource must be a non-empty path")
+    return f"{API_VERSION_V3}/orgs/{org.strip()}/{resource.lstrip('/')}"
 
-# Projects
-PROJECTS_ENDPOINT = f"{API_VERSION_V2}/projects"
-PROJECT_DETAIL_ENDPOINT = f"{API_VERSION_V2}/projects/{{project_uid}}"
 
-# Volumes
-VOLUMES_ENDPOINT = f"{API_VERSION_V2}/volumes"
-VOLUME_DETAIL_ENDPOINT = f"{API_VERSION_V2}/volumes/{{volume_uid}}"
-VOLUME_STATE_ENDPOINT = f"{API_VERSION_V2}/volumes/{{volume_uid}}/state"
-VOLUME_EVENTS_ENDPOINT = f"{API_VERSION_V2}/volumes/{{volume_uid}}/events"
-VOLUME_DELETE_DEPLOYMENT_ENDPOINT = f"{API_VERSION_V2}/volumes/{{volume_uid}}/delete"
+# Global resources
+INVENTORY_ENDPOINT = f"{API_VERSION_V3}/inventory"
+PERSONAL_API_TOKENS_ENDPOINT = f"{API_VERSION_V3}/me/api-tokens"
+PERSONAL_API_TOKEN_DETAIL_ENDPOINT = f"{PERSONAL_API_TOKENS_ENDPOINT}/{{token_uid}}"
 
-# SSH Keys
-SSH_KEYS_ENDPOINT = f"{API_VERSION_V2}/ssh-keys"
-SSH_KEY_DETAIL_ENDPOINT = f"{API_VERSION_V2}/ssh-keys/{{ssh_key_uid}}"
-
-# User
-USER_WALLET_ENDPOINT = f"{API_VERSION_V2}/me/wallet"
-USER_CREDITS_ENDPOINT = f"{API_VERSION_V2}/me/credits"
-USER_API_KEYS_ENDPOINT = f"{API_VERSION_V2}/me/api-keys"
-USER_API_KEY_DETAIL_ENDPOINT = f"{API_VERSION_V2}/me/api-keys/{{key_uid}}"
-USER_API_KEY_ROTATE_ENDPOINT = f"{API_VERSION_V2}/me/api-keys/{{key_uid}}:roll"
+# Organization resources used by the other v3 clients.
+ORGS_ENDPOINT = f"{API_VERSION_V3}/orgs"
+ORG_DETAIL_ENDPOINT = f"{ORGS_ENDPOINT}/{{org_slug}}"
+ORG_WALLET_ENDPOINT = f"{ORG_DETAIL_ENDPOINT}/wallet"
+ORG_CREDITS_ENDPOINT = f"{ORG_DETAIL_ENDPOINT}/credits"
+MEMBERS_ENDPOINT = f"{ORG_DETAIL_ENDPOINT}/members"
+MEMBER_DETAIL_ENDPOINT = f"{MEMBERS_ENDPOINT}/{{username}}"
+SERVICE_TOKENS_ENDPOINT = f"{ORG_DETAIL_ENDPOINT}/tokens"
+SERVICE_TOKEN_DETAIL_ENDPOINT = f"{SERVICE_TOKENS_ENDPOINT}/{{token_uid}}"

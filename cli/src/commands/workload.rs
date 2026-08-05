@@ -9,7 +9,7 @@ use futures_util::{pin_mut, StreamExt};
 use crate::client::pagination::Page;
 use crate::client::types::{
     CreateWorkloadRequest, EnvVar, ListWorkloadsParams, LogOptions, Port, PortProtocol,
-    PortRouting, VolumeMount, Workload,
+    PortRouting, VerifyWorkloadRequest, VolumeMount, Workload,
 };
 use crate::client::ClientError;
 use crate::commands::Context;
@@ -53,9 +53,9 @@ pub enum WorkloadCommands {
         /// Filter by workload type
         #[arg(long = "type", value_enum)]
         workload_type: Option<TypeFilter>,
-        /// Filter by state
-        #[arg(long)]
-        state: Option<String>,
+        /// Filter by status
+        #[arg(long, visible_alias = "state")]
+        status: Option<String>,
         /// Filter by project
         #[arg(long)]
         project: Option<String>,
@@ -65,6 +65,9 @@ pub enum WorkloadCommands {
         /// Max results
         #[arg(long, default_value_t = 50)]
         limit: u32,
+        /// Continue listing from this cursor
+        #[arg(long)]
+        cursor: Option<String>,
     },
     /// Show a workload
     Get { uid: String },
@@ -100,25 +103,31 @@ pub enum WorkloadCommands {
         uid: String,
         #[arg(long, default_value_t = 20)]
         limit: u32,
+        #[arg(long)]
+        cursor: Option<String>,
     },
+    /// Verify a workload digest
+    Verify { uid: String, digest: String },
 }
 
 pub async fn handle(ctx: &Context, cmd: &WorkloadCommands) -> Result<()> {
     match cmd {
         WorkloadCommands::List {
             workload_type,
-            state,
+            status,
             project,
             name,
             limit,
+            cursor,
         } => {
             list(
                 ctx,
                 workload_type.map(TypeFilter::api_value),
-                state.clone(),
+                status.clone(),
                 project.clone(),
                 name.clone(),
                 *limit,
+                cursor.clone(),
             )
             .await
         }
@@ -144,7 +153,10 @@ pub async fn handle(ctx: &Context, cmd: &WorkloadCommands) -> Result<()> {
             )
             .await
         }
-        WorkloadCommands::Events { uid, limit } => events(ctx, uid, *limit).await,
+        WorkloadCommands::Events { uid, limit, cursor } => {
+            events(ctx, uid, *limit, cursor.clone()).await
+        }
+        WorkloadCommands::Verify { uid, digest } => verify(ctx, uid, digest).await,
     }
 }
 
@@ -155,18 +167,19 @@ pub(crate) async fn list(
     project: Option<String>,
     name: Option<String>,
     limit: u32,
+    cursor: Option<String>,
 ) -> Result<()> {
     let params = ListWorkloadsParams {
         page: Page {
             limit: Some(limit),
-            cursor: None,
+            cursor,
         },
         workload_type,
         status: state,
         project_id: ctx.project(project),
         name,
     };
-    let workloads = ctx.client.workloads().list(&params).await?;
+    let workloads = ctx.client.workloads(ctx.org()?).list(&params).await?;
     if ctx.json() {
         return format::print_json(&workloads);
     }
@@ -225,7 +238,7 @@ pub(crate) fn plural(count: usize, noun: &str) -> String {
 }
 
 async fn get(ctx: &Context, uid: &str) -> Result<()> {
-    let workload = ctx.client.workloads().get(uid).await?;
+    let workload = ctx.client.workloads(ctx.org()?).get(uid).await?;
     if ctx.json() {
         return format::print_json(&workload);
     }
@@ -239,7 +252,10 @@ async fn get(ctx: &Context, uid: &str) -> Result<()> {
         style::field("Resource", &resource.display_name);
         style::field(
             "GPU",
-            format::gpu_spec(resource.gpu_type.as_deref(), resource.gpu_count.unwrap_or(0)),
+            format::gpu_spec(
+                resource.gpu_type.as_deref(),
+                resource.gpu_count.unwrap_or(0),
+            ),
         );
     }
     if let Some(state) = &workload.state {
@@ -272,7 +288,10 @@ async fn get(ctx: &Context, uid: &str) -> Result<()> {
         style::field("Project", project);
     }
     for volume in &workload.volumes {
-        style::field("Volume", format!("{} {} {}", volume.uid, style::ARROW, volume.mount_path));
+        style::field(
+            "Volume",
+            format!("{} {} {}", volume.uid, style::ARROW, volume.mount_path),
+        );
     }
     for key in &workload.ssh_keys {
         style::field("SSH key", format!("{} ({})", key.name, key.uid));
@@ -282,7 +301,7 @@ async fn get(ctx: &Context, uid: &str) -> Result<()> {
 }
 
 async fn state(ctx: &Context, uid: &str) -> Result<()> {
-    let state = ctx.client.workloads().state(uid).await?;
+    let state = ctx.client.workloads(ctx.org()?).state(uid).await?;
     if ctx.json() {
         return format::print_json(&state);
     }
@@ -313,7 +332,7 @@ async fn delete(ctx: &Context, uid: &str, yes: bool) -> Result<()> {
     {
         return Err(CliError::Cancelled);
     }
-    ctx.client.workloads().delete(uid).await?;
+    ctx.client.workloads(ctx.org()?).delete(uid).await?;
     style::success(format!("deleted workload {uid}"));
     Ok(())
 }
@@ -328,7 +347,7 @@ async fn logs(
     follow: bool,
 ) -> Result<()> {
     if log_type.is_some() {
-        let workload = ctx.client.workloads().get(uid).await?;
+        let workload = ctx.client.workloads(ctx.org()?).get(uid).await?;
         if workload.workload_type != "VM" {
             return Err(CliError::Config(format!(
                 "{uid} is a {} — --log-type applies only to VMs",
@@ -343,7 +362,11 @@ async fn logs(
         log_type,
     };
     if follow {
-        let stream = ctx.client.workloads().logs_stream(uid, &opts).await?;
+        let stream = ctx
+            .client
+            .workloads(ctx.org()?)
+            .logs_stream(uid, &opts)
+            .await?;
         pin_mut!(stream);
         let mut stdout = std::io::stdout();
         while let Some(chunk) = stream.next().await {
@@ -352,18 +375,18 @@ async fn logs(
             stdout.flush()?;
         }
     } else {
-        let text = ctx.client.workloads().logs(uid, &opts).await?;
+        let text = ctx.client.workloads(ctx.org()?).logs(uid, &opts).await?;
         print!("{text}");
     }
     Ok(())
 }
 
-async fn events(ctx: &Context, uid: &str, limit: u32) -> Result<()> {
+async fn events(ctx: &Context, uid: &str, limit: u32, cursor: Option<String>) -> Result<()> {
     let page = Page {
         limit: Some(limit),
-        cursor: None,
+        cursor,
     };
-    let events = ctx.client.workloads().events(uid, &page).await?;
+    let events = ctx.client.workloads(ctx.org()?).events(uid, &page).await?;
     if ctx.json() {
         return format::print_json(&events);
     }
@@ -390,9 +413,29 @@ async fn events(ctx: &Context, uid: &str, limit: u32) -> Result<()> {
     Ok(())
 }
 
+async fn verify(ctx: &Context, uid: &str, digest: &str) -> Result<()> {
+    let result = ctx
+        .client
+        .workloads(ctx.org()?)
+        .verify(&VerifyWorkloadRequest {
+            uid: uid.to_string(),
+            digest: digest.to_string(),
+        })
+        .await?;
+    if ctx.json() {
+        return format::print_json(&result);
+    }
+    if result.verified {
+        style::success(format!("verified digest for workload {uid}"));
+    } else {
+        style::error(format!("digest did not verify for workload {uid}"));
+    }
+    Ok(())
+}
+
 pub(crate) async fn register(ctx: &Context, req: &CreateWorkloadRequest) -> Result<Workload> {
     let spinner = progress::spinner_if(!ctx.json(), format!("Registering {}…", req.name));
-    match ctx.client.workloads().create(req).await {
+    match ctx.client.workloads(ctx.org()?).create(req).await {
         Ok(workload) => {
             spinner.finish_ok(format!(
                 "Registered {} {}",
@@ -409,8 +452,9 @@ pub(crate) async fn register(ctx: &Context, req: &CreateWorkloadRequest) -> Resu
 }
 
 pub(crate) async fn start_workload(ctx: &Context, uid: &str) -> Result<()> {
-    let spinner = progress::spinner_if(!ctx.json(), format!("Starting {}…", format::short_uid(uid)));
-    match ctx.client.workloads().deploy(uid).await {
+    let spinner =
+        progress::spinner_if(!ctx.json(), format!("Starting {}…", format::short_uid(uid)));
+    match ctx.client.workloads(ctx.org()?).deploy(uid).await {
         Ok(workload) => {
             let status = workload
                 .state
@@ -451,7 +495,7 @@ pub(crate) async fn deploy_flow(
     let checklist = progress::Checklist::new(!ctx.json(), &["Registering", "Starting"]);
 
     checklist.start(0, &req.name);
-    let created = match ctx.client.workloads().create(req).await {
+    let created = match ctx.client.workloads(ctx.org()?).create(req).await {
         Ok(workload) => {
             checklist.done(
                 0,
@@ -467,7 +511,7 @@ pub(crate) async fn deploy_flow(
     };
 
     checklist.start(1, &created.uid);
-    let workload = match ctx.client.workloads().deploy(&created.uid).await {
+    let workload = match ctx.client.workloads(ctx.org()?).deploy(&created.uid).await {
         Ok(workload) => {
             let status = workload
                 .state
@@ -524,10 +568,7 @@ pub(crate) async fn deploy_flow(
             );
         }
         DeployKind::Vm => {
-            style::next_action(
-                "connect",
-                format!("targon workload get {}", workload.uid),
-            );
+            style::next_action("connect", format!("targon workload get {}", workload.uid));
         }
     }
     Ok(())
@@ -584,9 +625,9 @@ pub(crate) fn parse_port(raw: &str) -> Result<Port> {
 }
 
 pub(crate) fn parse_volume(raw: &str) -> Result<VolumeMount> {
-    let (uid, rest) = raw
-        .split_once(':')
-        .ok_or_else(|| CliError::Config(format!("invalid --volume '{raw}', expected UID:/path[:ro]")))?;
+    let (uid, rest) = raw.split_once(':').ok_or_else(|| {
+        CliError::Config(format!("invalid --volume '{raw}', expected UID:/path[:ro]"))
+    })?;
     let (mount_path, read_only) = match rest.rsplit_once(':') {
         Some((path, "ro")) => (path.to_string(), true),
         Some((path, "rw")) => (path.to_string(), false),

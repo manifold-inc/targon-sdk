@@ -27,7 +27,11 @@ pub struct RentalSpec {
     #[arg(long = "env", value_name = "KEY=VAL")]
     pub env: Vec<String>,
     /// Port to expose (repeatable, comma-separated ok)
-    #[arg(long = "port", value_name = "PORT[/PROTO[/ROUTING]]", value_delimiter = ',')]
+    #[arg(
+        long = "port",
+        value_name = "PORT[/PROTO[/ROUTING]]",
+        value_delimiter = ','
+    )]
     pub port: Vec<String>,
     /// Volume mount (repeatable)
     #[arg(long = "volume", value_name = "UID:/path[:ro]")]
@@ -58,7 +62,9 @@ pub struct RentalSpec {
 #[derive(Debug, Subcommand)]
 pub enum RentalCommands {
     /// Register and start a rental
-    #[command(override_usage = "targon rental deploy --name <NAME> --image <IMAGE> --resource <RESOURCE> [OPTIONS]")]
+    #[command(
+        override_usage = "targon rental deploy --name <NAME> --image <IMAGE> --resource <RESOURCE> [OPTIONS]"
+    )]
     Deploy {
         #[command(flatten)]
         spec: RentalSpec,
@@ -67,7 +73,9 @@ pub enum RentalCommands {
         yes: bool,
     },
     /// Register a rental without starting it
-    #[command(override_usage = "targon rental create --name <NAME> --image <IMAGE> --resource <RESOURCE> [OPTIONS]")]
+    #[command(
+        override_usage = "targon rental create --name <NAME> --image <IMAGE> --resource <RESOURCE> [OPTIONS]"
+    )]
     Create {
         #[command(flatten)]
         spec: RentalSpec,
@@ -79,9 +87,9 @@ pub enum RentalCommands {
     Start { uid: String },
     /// List rentals
     List {
-        /// Filter by state
-        #[arg(long)]
-        state: Option<String>,
+        /// Filter by status
+        #[arg(long, visible_alias = "state")]
+        status: Option<String>,
         /// Filter by project
         #[arg(long)]
         project: Option<String>,
@@ -91,6 +99,9 @@ pub enum RentalCommands {
         /// Max results
         #[arg(long, default_value_t = 50)]
         limit: u32,
+        /// Continue listing from this cursor
+        #[arg(long)]
+        cursor: Option<String>,
     },
     /// Run a command inside a rental
     Exec {
@@ -124,18 +135,20 @@ pub async fn handle(ctx: &Context, cmd: &RentalCommands) -> Result<()> {
         RentalCommands::Create { spec, yes } => create(ctx, spec.clone(), *yes).await,
         RentalCommands::Start { uid } => start(ctx, uid).await,
         RentalCommands::List {
-            state,
+            status,
             project,
             name,
             limit,
+            cursor,
         } => {
             workload::list(
                 ctx,
                 Some("RENTAL".to_string()),
-                state.clone(),
+                status.clone(),
                 project.clone(),
                 name.clone(),
                 *limit,
+                cursor.clone(),
             )
             .await
         }
@@ -181,7 +194,7 @@ async fn start(ctx: &Context, uid: &str) -> Result<()> {
 
 async fn exec(ctx: &Context, uid: &str, command: &[String]) -> Result<()> {
     commands::ensure_rental(ctx, uid, "exec").await?;
-    let stream = ctx.client.workloads().exec(uid, command).await?;
+    let stream = ctx.client.workloads(ctx.org()?).exec(uid, command).await?;
     pin_mut!(stream);
     let mut stdout = std::io::stdout();
     while let Some(chunk) = stream.next().await {
@@ -198,7 +211,7 @@ async fn suspend(ctx: &Context, uid: &str) -> Result<()> {
         !ctx.json(),
         format!("Suspending {}…", format::short_uid(uid)),
     );
-    match ctx.client.workloads().suspend(uid).await {
+    match ctx.client.workloads(ctx.org()?).suspend(uid).await {
         Ok(workload) => {
             spinner.finish_ok(format!(
                 "Suspended {} (resume with `targon rental start {}`)",
@@ -230,7 +243,7 @@ async fn attach_volume(
     };
     let result = ctx
         .client
-        .workloads()
+        .workloads(ctx.org()?)
         .attach_volume(uid, volume_uid, &req)
         .await?;
     if ctx.json() {
@@ -245,14 +258,21 @@ async fn attach_volume(
 
 async fn detach_volume(ctx: &Context, uid: &str, volume_uid: &str) -> Result<()> {
     commands::ensure_rental(ctx, uid, "detach-volume").await?;
-    ctx.client.workloads().detach_volume(uid, volume_uid).await?;
+    ctx.client
+        .workloads(ctx.org()?)
+        .detach_volume(uid, volume_uid)
+        .await?;
     style::success(format!("detached volume {volume_uid} from {uid}"));
     Ok(())
 }
 
 async fn attach_ssh_key(ctx: &Context, uid: &str, ssh_key_uid: &str) -> Result<()> {
     commands::ensure_rental(ctx, uid, "attach-ssh-key").await?;
-    let result = ctx.client.workloads().attach_ssh_key(uid, ssh_key_uid).await?;
+    let result = ctx
+        .client
+        .workloads(ctx.org()?)
+        .attach_ssh_key(uid, ssh_key_uid)
+        .await?;
     if ctx.json() {
         return format::print_json(&result);
     }
@@ -263,7 +283,7 @@ async fn attach_ssh_key(ctx: &Context, uid: &str, ssh_key_uid: &str) -> Result<(
 async fn detach_ssh_key(ctx: &Context, uid: &str, ssh_key_uid: &str) -> Result<()> {
     commands::ensure_rental(ctx, uid, "detach-ssh-key").await?;
     ctx.client
-        .workloads()
+        .workloads(ctx.org()?)
         .detach_ssh_key(uid, ssh_key_uid)
         .await?;
     style::success(format!("detached ssh key {ssh_key_uid} from {uid}"));
@@ -394,8 +414,7 @@ pub(crate) fn resource_value(
             "{} {} {}",
             p.display_name,
             style::SEP,
-            format::cost_per_hour(p.cost_per_hour)
-                .color(palettes::SUCCESS)
+            format::cost_per_hour(p.cost_per_hour).color(palettes::SUCCESS)
         ),
         None => resource_name.to_string(),
     }
