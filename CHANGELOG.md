@@ -9,6 +9,35 @@ Component releases use prefixed tags (`cli/vX.Y.Z`, `python/vX.Y.Z`, …).
 
 ## [Unreleased]
 
+### Added
+- Added first-class Sandbox APIs to the Go, Python, and TypeScript SDKs.
+- Added fetched, client-bound `SandboxTemplate` resources with refresh, update,
+  delete, and sandbox-creation methods.
+- Added sandbox lifecycle, fork/publish, exec, binary file transfer, access
+  tickets, terminal session management, raw-binary terminal WebSockets, and
+  desktop metadata.
+- Added typed sandbox errors, strict client validation, cursor pagination, and
+  method-bearing `Sandbox` resources.
+- Added the zero-runtime-dependency TypeScript SDK and optional terminal
+  transport for Python.
+- Added mock-backed Sandbox regression suites in all three SDKs.
+
+### Changed
+- Prepared coordinated `4.0.0-rc.1` releases for Go, Python, and TypeScript.
+- Sandbox creation now requires a fetched `READY` `SandboxTemplate` resource;
+  raw template UIDs are not accepted by the public create APIs.
+- Sandbox mutations do not retry automatically, preventing duplicate forks,
+  publishes, execs, or misleading replay failures. Safe reads retain retries.
+- Grouped Python and TypeScript file and terminal operations under bound
+  `sandbox.files` and `sandbox.terminals` capabilities, removing redundant
+  pre-release aliases.
+- Simplified resource binding, validation, path construction, and lifecycle
+  polling across the public SDKs.
+
+### Removed
+- Removed the legacy RENTAL-backed Python Sandbox shim and its workload
+  streaming-exec behavior.
+
 ## [python/3.0.0] - 2026-07-27
 ### Added
 - Added bound organization context through `Client(org=...)`, `TARGON_ORG`, active CLI profiles, and `Client.for_org()`.

@@ -1,10 +1,14 @@
 {
   "name": "@targon/sdk",
-  "version": "0.1.0",
+  "version": "4.0.0-rc.1",
   "description": "Targon SDK to interact with Targon workloads",
   "license": "Apache-2.0",
   "author": "Manifold Labs <dev@manifold.inc>",
   "type": "module",
+  "sideEffects": false,
+  "engines": {
+    "node": ">=18"
+  },
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -19,7 +23,9 @@
   ],
   "scripts": {
     "build": "tsc",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "test": "tsx --test test/*.test.ts",
+    "typecheck": "tsc --noEmit"
   },
   "keywords": [
     "api",
@@ -32,6 +38,7 @@
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
+    "tsx": "^4.23.15",
     "typescript": "^5.5.0"
   }
 }

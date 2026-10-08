@@ -1,7 +1,9 @@
 name: Publish Python package
 
 on:
-  workflow_dispatch:
+  push:
+    tags:
+      - "python/v*"
 
 permissions:
   contents: read
@@ -28,11 +30,34 @@ jobs:
       - name: Install build dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install build
+          python -m pip install build packaging twine
+
+      - name: Verify tag matches package version
+        if: github.ref_type == 'tag'
+        working-directory: libs/python
+        env:
+          TAG_VERSION: ${{ github.ref_name }}
+        run: |
+          PYTHONPATH=src python - <<'PY'
+          import os
+          from packaging.version import Version
+          from targon.version import __version__
+
+          tag = os.environ["TAG_VERSION"].removeprefix("python/v")
+          if Version(tag) != Version(__version__):
+              raise SystemExit(f"tag {tag!r} does not match package {__version__!r}")
+          PY
 
       - name: Build distribution
+        working-directory: libs/python
         run: python -m build
+
+      - name: Check distribution metadata
+        working-directory: libs/python
+        run: python -m twine check dist/*
 
       - name: Publish package to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: libs/python/dist
 

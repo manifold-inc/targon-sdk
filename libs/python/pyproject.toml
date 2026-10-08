@@ -30,11 +30,16 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+sandbox = [
+    "websockets>=12",
+]
 dev = [
     "black>=24.0",
     "flake8>=6.0",
     "isort>=6.0",
+    "pytest>=8.0",
     "types-requests",
+    "websockets>=12",
 ]
 
 [tool.setuptools]
@@ -64,3 +69,6 @@ profile = "black"
 line_length = 88
 known_first_party = ["targon"]
 src_paths = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
