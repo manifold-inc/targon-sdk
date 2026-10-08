@@ -28,6 +28,11 @@ Component releases use prefixed tags (`cli/vX.Y.Z`, `python/vX.Y.Z`, …).
   raw template UIDs are not accepted by the public create APIs.
 - Sandbox mutations do not retry automatically, preventing duplicate forks,
   publishes, execs, or misleading replay failures. Safe reads retain retries.
+- Grouped Python and TypeScript file and terminal operations under bound
+  `sandbox.files` and `sandbox.terminals` capabilities, removing redundant
+  pre-release aliases.
+- Simplified resource binding, validation, path construction, and lifecycle
+  polling across the public SDKs.
 
 ### Removed
 - Removed the legacy RENTAL-backed Python Sandbox shim and its workload
