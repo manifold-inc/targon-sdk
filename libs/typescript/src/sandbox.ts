@@ -1,4 +1,7 @@
-import type { SandboxesService } from "./sandboxes.js";
+import type {
+  SandboxFilesService,
+  SandboxesService,
+} from "./sandboxes.js";
 import type { SandboxTemplate } from "./templates.js";
 import type {
   AccessTicket,
@@ -23,48 +26,38 @@ import type {
 
 /** A hydrated sandbox with the wire data and thin service-backed conveniences. */
 export class Sandbox implements SandboxData {
-  readonly uid: string;
-  readonly type: "SANDBOX";
-  project_id?: string;
-  name: string;
-  image?: string;
-  resource_name?: string;
-  reservation_uid?: string;
-  cost_per_hour?: number;
-  frozen_cost_per_hour?: number;
-  resource?: WorkloadResource;
-  ports?: WorkloadPort[];
-  ssh_keys?: WorkloadSSHKey[];
-  sandbox_config?: SandboxConfig;
-  state?: WorkloadState;
-  readonly created_at: string;
-  updated_at: string;
-
+  readonly #data: SandboxData;
   readonly #service: SandboxesService;
   readonly #files: SandboxFiles;
   readonly #terminals: SandboxTerminals;
 
   constructor(service: SandboxesService, data: SandboxData) {
     this.#service = service;
-    this.uid = data.uid;
-    this.type = data.type;
-    this.project_id = data.project_id;
-    this.name = data.name;
-    this.image = data.image;
-    this.resource_name = data.resource_name;
-    this.reservation_uid = data.reservation_uid;
-    this.cost_per_hour = data.cost_per_hour;
-    this.frozen_cost_per_hour = data.frozen_cost_per_hour;
-    this.resource = data.resource;
-    this.ports = data.ports;
-    this.ssh_keys = data.ssh_keys;
-    this.sandbox_config = data.sandbox_config;
-    this.state = data.state;
-    this.created_at = data.created_at;
-    this.updated_at = data.updated_at;
-    this.#files = new SandboxFiles(service, this.uid);
+    this.#data = { ...data };
+    this.#files = new SandboxFiles(service.files, data.uid);
     this.#terminals = new SandboxTerminals(service, this.uid);
   }
+
+  get uid(): string { return this.#data.uid; }
+  get type(): "SANDBOX" { return this.#data.type; }
+  get project_id(): string | undefined { return this.#data.project_id; }
+  get name(): string { return this.#data.name; }
+  get image(): string | undefined { return this.#data.image; }
+  get resource_name(): string | undefined { return this.#data.resource_name; }
+  get reservation_uid(): string | undefined { return this.#data.reservation_uid; }
+  get cost_per_hour(): number | undefined { return this.#data.cost_per_hour; }
+  get frozen_cost_per_hour(): number | undefined {
+    return this.#data.frozen_cost_per_hour;
+  }
+  get resource(): WorkloadResource | undefined { return this.#data.resource; }
+  get ports(): WorkloadPort[] | undefined { return this.#data.ports; }
+  get ssh_keys(): WorkloadSSHKey[] | undefined { return this.#data.ssh_keys; }
+  get sandbox_config(): SandboxConfig | undefined {
+    return this.#data.sandbox_config;
+  }
+  get state(): WorkloadState | undefined { return this.#data.state; }
+  get created_at(): string { return this.#data.created_at; }
+  get updated_at(): string { return this.#data.updated_at; }
 
   get files(): SandboxFiles {
     return this.#files;
@@ -110,14 +103,6 @@ export class Sandbox implements SandboxData {
     return this.#service.exec(this.uid, cmd, timeoutSec);
   }
 
-  readFile(path: string): Promise<Uint8Array> {
-    return this.#service.readFile(this.uid, path);
-  }
-
-  writeFile(path: string, data: Uint8Array): Promise<void> {
-    return this.#service.writeFile(this.uid, path, data);
-  }
-
   mintAccessTicket(ttlSec = 60): Promise<AccessTicket> {
     return this.#service.mintAccessTicket(this.uid, ttlSec);
   }
@@ -135,39 +120,22 @@ export class Sandbox implements SandboxData {
   }
 
   toJSON(): SandboxData {
-    return {
-      uid: this.uid,
-      type: this.type,
-      project_id: this.project_id,
-      name: this.name,
-      image: this.image,
-      resource_name: this.resource_name,
-      reservation_uid: this.reservation_uid,
-      cost_per_hour: this.cost_per_hour,
-      frozen_cost_per_hour: this.frozen_cost_per_hour,
-      resource: this.resource,
-      ports: this.ports,
-      ssh_keys: this.ssh_keys,
-      sandbox_config: this.sandbox_config,
-      state: this.state,
-      created_at: this.created_at,
-      updated_at: this.updated_at,
-    };
+    return { ...this.#data };
   }
 }
 
 export class SandboxFiles {
   constructor(
-    private readonly service: SandboxesService,
+    private readonly service: SandboxFilesService,
     private readonly uid: string,
   ) {}
 
   read(path: string): Promise<Uint8Array> {
-    return this.service.readFile(this.uid, path);
+    return this.service.read(this.uid, path);
   }
 
   write(path: string, data: Uint8Array): Promise<void> {
-    return this.service.writeFile(this.uid, path, data);
+    return this.service.write(this.uid, path, data);
   }
 }
 

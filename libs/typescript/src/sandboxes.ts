@@ -2,10 +2,8 @@ import { decodeBase64, encodeBase64 } from "./base64.js";
 import type { TargonClient } from "./client.js";
 import { Sandbox } from "./sandbox.js";
 import {
-  hydrateSandboxTemplate,
-  type SandboxTemplate,
+  SandboxTemplate,
   type SandboxTemplatesService,
-  templateUIDForService,
 } from "./templates.js";
 import type {
   AccessTicket,
@@ -30,16 +28,22 @@ import type {
   WorkloadStateResponse,
 } from "./types.js";
 import {
+  assertCommand,
+  assertDisplayName,
+  assertFileData,
+  assertGuestPath,
   assertLimit,
   assertName,
   assertPorts,
   assertSandboxConfig,
   assertSandboxConfigUpdate,
+  assertSandboxStatus,
   assertTemplateName,
   assertTerminalDimension,
-  MAX_COMMAND_BYTES,
-  MAX_FILE_BYTES,
-  sleep,
+  assertTerminalID,
+  assertTicketTTL,
+  pollUntil,
+  TERMINAL_FAILURE_STATUSES,
 } from "./validation.js";
 
 interface FileResponse {
@@ -61,13 +65,16 @@ export class SandboxesService {
     readonly templates: SandboxTemplatesService,
   ) {
     this.terminals = new SandboxTerminalsService(client, this);
-    this.files = new SandboxFilesService(this);
+    this.files = new SandboxFilesService(client);
   }
 
   async create(params: SandboxCreateParams): Promise<Sandbox> {
     assertName(params.name);
     assertPorts(params.ports);
-    const templateUID = templateUIDForService(params.template, this.templates);
+    if (!(params.template instanceof SandboxTemplate)) {
+      throw new TypeError("template must be a SandboxTemplate from this TargonClient");
+    }
+    const templateUID = params.template._uidFor(this.templates);
     const sandboxConfig = {
       ttl_sec: params.ttl_sec,
       idle_timeout_sec: params.idle_timeout_sec,
@@ -90,16 +97,13 @@ export class SandboxesService {
         },
       ),
     );
-    this.assertOperationResponse(
-      await this.client.request<unknown>(
-        "POST",
-        this.workloadPath(created.uid, "/deploy"),
-        { workloadUID: created.uid },
-      ),
+    return this.postAndWait(
+      created.uid,
+      "/deploy",
+      "running",
+      params.wait_until_running,
+      params.wait,
     );
-    return params.wait_until_running === false
-      ? this.get(created.uid)
-      : this.waitForStatus(created.uid, "running", params.wait);
   }
 
   async get(uid: string): Promise<Sandbox> {
@@ -189,25 +193,11 @@ export class SandboxesService {
   }
 
   async freeze(uid: string, wait: WaitOptions = {}): Promise<Sandbox> {
-    this.assertOperationResponse(
-      await this.client.request<unknown>(
-        "POST",
-        this.workloadPath(uid, "/freeze"),
-        { workloadUID: uid },
-      ),
-    );
-    return this.waitForStatus(uid, "frozen", wait);
+    return this.postAndWait(uid, "/freeze", "frozen", true, wait);
   }
 
   async thaw(uid: string, wait: WaitOptions = {}): Promise<Sandbox> {
-    this.assertOperationResponse(
-      await this.client.request<unknown>(
-        "POST",
-        this.workloadPath(uid, "/thaw"),
-        { workloadUID: uid },
-      ),
-    );
-    return this.waitForStatus(uid, "running", wait);
+    return this.postAndWait(uid, "/thaw", "running", true, wait);
   }
 
   delete(uid: string): Promise<void> {
@@ -219,30 +209,22 @@ export class SandboxesService {
   async fork(uid: string, request: ForkRequest = {}): Promise<Sandbox> {
     if (request.name !== undefined && request.name !== "") assertName(request.name);
     assertSandboxConfig(request.sandbox_config);
-    const child = this.assertOperationResponse(
-      await this.client.request<unknown>(
-        "POST",
-        this.workloadPath(uid, "/fork"),
-        {
-          body: {
-            name: request.name,
-            project_id: request.project_id,
-            sandbox_config: request.sandbox_config,
-          },
-          workloadUID: uid,
-        },
-      ),
+    const child = await this.postOperation(uid, "/fork", {
+      name: request.name,
+      project_id: request.project_id,
+      sandbox_config: request.sandbox_config,
+    });
+    return this.waitForOperation(
+      child.uid,
+      "running",
+      request.wait_until_running,
+      request.wait,
     );
-    return request.wait_until_running === false
-      ? this.get(child.uid)
-      : this.waitForStatus(child.uid, "running", request.wait);
   }
 
   async publish(uid: string, request: PublishRequest): Promise<SandboxTemplate> {
     assertTemplateName(request.name);
-    if (request.display_name !== undefined && request.display_name.trim().length > 128) {
-      throw new RangeError("display_name must be at most 128 characters");
-    }
+    assertDisplayName(request.display_name);
     const template = await this.client.request<SandboxTemplateData>(
       "POST",
       this.workloadPath(uid, "/publish"),
@@ -256,7 +238,7 @@ export class SandboxesService {
       },
     );
     return request.wait_until_ready === false
-      ? hydrateSandboxTemplate(template, this.templates)
+      ? new SandboxTemplate(this.templates, template)
       : this.templates.waitForStatus(template.uid, ["READY", "FAILED"], request.wait);
   }
 
@@ -266,63 +248,32 @@ export class SandboxesService {
     options: WaitOptions = {},
   ): Promise<Sandbox> {
     const accepted = new Set(Array.isArray(statuses) ? statuses : [statuses]);
-    const timeout = options.timeout_ms ?? 10 * 60_000;
-    const interval = options.interval_ms ?? 1_000;
-    const deadline = Date.now() + timeout;
-    for (;;) {
-      if (options.signal?.aborted) throw options.signal.reason;
-      const state = await this.getState(uid);
-      if (accepted.has(state.status)) return this.get(uid);
-      if (TERMINAL_FAILURE_STATUSES.has(state.status)) {
-        throw new Error(`Sandbox ${uid} reached terminal status ${state.status}: ${state.message}`);
-      }
-      if (Date.now() >= deadline) {
-        throw new Error(`Timed out waiting for sandbox ${uid}`);
-      }
-      await sleep(interval, options.signal);
-    }
+    return pollUntil(
+      () => this.getState(uid),
+      (state) => {
+        if (accepted.has(state.status)) return this.get(uid);
+        if (TERMINAL_FAILURE_STATUSES.has(state.status)) {
+          throw new Error(
+            `Sandbox ${uid} reached terminal status ${state.status}: ${state.message}`,
+          );
+        }
+        return undefined;
+      },
+      `Timed out waiting for sandbox ${uid}`,
+      options,
+    );
   }
 
   exec(uid: string, cmd: string, timeoutSec = 60): Promise<ExecResult> {
-    const commandBytes = new TextEncoder().encode(cmd).byteLength;
-    if (!cmd.trim() || commandBytes > MAX_COMMAND_BYTES) {
-      throw new RangeError("cmd must be non-empty and at most 64 KiB");
-    }
-    if (!Number.isInteger(timeoutSec) || timeoutSec < 1 || timeoutSec > 600) {
-      throw new RangeError("timeoutSec must be an integer from 1 through 600");
-    }
+    assertCommand(cmd, timeoutSec);
     return this.client.request("POST", this.workloadPath(uid, "/exec"), {
       body: { cmd, timeout_sec: timeoutSec },
       workloadUID: uid,
     });
   }
 
-  async readFile(uid: string, path: string): Promise<Uint8Array> {
-    assertGuestPath(path);
-    const file = await this.client.request<FileResponse>(
-      "GET",
-      this.workloadPath(uid, "/files"),
-      { query: { path }, workloadUID: uid },
-    );
-    return decodeBase64(file.content_b64);
-  }
-
-  writeFile(uid: string, path: string, data: Uint8Array): Promise<void> {
-    assertGuestPath(path);
-    if (!(data instanceof Uint8Array)) throw new TypeError("data must be a Uint8Array");
-    if (data.byteLength > MAX_FILE_BYTES) {
-      throw new RangeError("file content must not exceed 256 MiB");
-    }
-    return this.client.request("PUT", this.workloadPath(uid, "/files"), {
-      body: { path, content_b64: encodeBase64(data) },
-      workloadUID: uid,
-    });
-  }
-
   mintAccessTicket(uid: string, ttlSec = 60): Promise<AccessTicket> {
-    if (!Number.isInteger(ttlSec) || ttlSec < 1 || ttlSec > 300) {
-      throw new RangeError("ttlSec must be an integer from 1 through 300");
-    }
+    assertTicketTTL(ttlSec);
     return this.client.request("POST", this.workloadPath(uid, "/access-tickets"), {
       body: { ttl_sec: ttlSec },
       workloadUID: uid,
@@ -337,6 +288,39 @@ export class SandboxesService {
 
   private workloadPath(uid: string, suffix = ""): string {
     return this.client.orgPath(`/workloads/${encodeURIComponent(uid)}${suffix}`);
+  }
+
+  private async postOperation(
+    uid: string,
+    suffix: string,
+    body?: unknown,
+  ): Promise<SandboxOperationResponse> {
+    return this.assertOperationResponse(
+      await this.client.request<unknown>("POST", this.workloadPath(uid, suffix), {
+        body,
+        workloadUID: uid,
+      }),
+    );
+  }
+
+  private async postAndWait(
+    uid: string,
+    suffix: string,
+    status: SandboxStatus,
+    wait: boolean | undefined,
+    options?: WaitOptions,
+  ): Promise<Sandbox> {
+    await this.postOperation(uid, suffix);
+    return this.waitForOperation(uid, status, wait, options);
+  }
+
+  private waitForOperation(
+    uid: string,
+    status: SandboxStatus,
+    wait: boolean | undefined,
+    options?: WaitOptions,
+  ): Promise<Sandbox> {
+    return wait === false ? this.get(uid) : this.waitForStatus(uid, status, options);
   }
 
   private hydrate(data: SandboxData): Sandbox {
@@ -371,14 +355,29 @@ export class SandboxesService {
 }
 
 export class SandboxFilesService {
-  constructor(private readonly sandboxes: SandboxesService) {}
+  constructor(private readonly client: TargonClient) {}
 
-  read(uid: string, path: string): Promise<Uint8Array> {
-    return this.sandboxes.readFile(uid, path);
+  async read(uid: string, path: string): Promise<Uint8Array> {
+    assertGuestPath(path);
+    const file = await this.client.request<FileResponse>(
+      "GET",
+      this.path(uid),
+      { query: { path }, workloadUID: uid },
+    );
+    return decodeBase64(file.content_b64);
   }
 
   write(uid: string, path: string, data: Uint8Array): Promise<void> {
-    return this.sandboxes.writeFile(uid, path, data);
+    assertGuestPath(path);
+    assertFileData(data);
+    return this.client.request("PUT", this.path(uid), {
+      body: { path, content_b64: encodeBase64(data) },
+      workloadUID: uid,
+    });
+  }
+
+  private path(uid: string): string {
+    return this.client.orgPath(`/workloads/${encodeURIComponent(uid)}/files`);
   }
 }
 
@@ -476,18 +475,6 @@ export class SandboxTerminalsService {
   }
 }
 
-function assertGuestPath(path: string): void {
-  if (!path.startsWith("/") || path.includes("\0")) {
-    throw new TypeError("path must be absolute and must not contain NUL");
-  }
-}
-
-function assertTerminalID(terminalID: string): void {
-  if (!/^[A-Za-z0-9._-]{1,64}$/.test(terminalID)) {
-    throw new TypeError("terminalID is invalid");
-  }
-}
-
 async function toBytes(data: unknown): Promise<Uint8Array> {
   if (data instanceof Uint8Array) return data;
   if (data instanceof ArrayBuffer) return new Uint8Array(data);
@@ -498,30 +485,4 @@ async function toBytes(data: unknown): Promise<Uint8Array> {
     return new Uint8Array(await data.arrayBuffer());
   }
   throw new TypeError("Terminal WebSocket delivered a non-binary frame");
-}
-
-const SANDBOX_STATUSES: ReadonlySet<string> = new Set([
-  "registered",
-  "provisioning",
-  "running",
-  "error",
-  "suspended",
-  "deleted",
-  "pending",
-  "powering_on",
-  "powering_off",
-  "rebooting",
-  "stopped",
-  "frozen",
-]);
-
-const TERMINAL_FAILURE_STATUSES: ReadonlySet<SandboxStatus> = new Set([
-  "error",
-  "deleted",
-]);
-
-function assertSandboxStatus(status: string): asserts status is SandboxStatus {
-  if (!SANDBOX_STATUSES.has(status)) {
-    throw new TypeError(`Unknown sandbox status: ${status}`);
-  }
 }

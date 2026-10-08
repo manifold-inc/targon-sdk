@@ -1,22 +1,11 @@
 import type { SandboxTemplate } from "./templates.js";
+import type { SANDBOX_STATUSES } from "./validation.js";
 
 export type SandboxTemplateKind = "FRESH" | "USER";
 export type SandboxTemplateStatus = "PENDING" | "READY" | "FAILED";
 export type PortProtocol = "TCP" | "UDP";
 export type PortRouting = "PROXIED" | "DIRECT";
-export type SandboxStatus =
-  | "registered"
-  | "provisioning"
-  | "running"
-  | "error"
-  | "suspended"
-  | "deleted"
-  | "pending"
-  | "powering_on"
-  | "powering_off"
-  | "rebooting"
-  | "stopped"
-  | "frozen";
+export type SandboxStatus = (typeof SANDBOX_STATUSES)[number];
 
 export interface Page<T> {
   items: T[];
@@ -117,16 +106,9 @@ export interface SandboxSummary {
   updated_at: string;
 }
 
-export interface WorkloadStateResponse {
+export interface WorkloadStateResponse extends WorkloadState {
   uid: string;
   workload_type: "SANDBOX";
-  status: SandboxStatus;
-  message: string;
-  urls?: WorkloadURL[];
-  public_ip?: string;
-  ssh_port?: number;
-  ready_replicas: number;
-  total_replicas: number;
   updated_at: string;
 }
 

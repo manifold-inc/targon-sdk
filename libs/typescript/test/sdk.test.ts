@@ -73,6 +73,13 @@ function mockFetch(...responses: Response[]): MockFetch {
   return fetch;
 }
 
+function testClient(
+  fetch: typeof globalThis.fetch = mockFetch(),
+  config: Partial<ConstructorParameters<typeof TargonClient>[0]> = {},
+): TargonClient {
+  return new TargonClient({ organization: "acme", apiKey: "key", fetch, ...config });
+}
+
 function assertSubset(
   actual: unknown,
   expected: Record<string, unknown>,
@@ -91,11 +98,9 @@ describe("TargonClient", () => {
         headers: { "Content-Type": "text/plain" },
       }),
     );
-    const client = new TargonClient({
-      organization: "acme",
+    const client = testClient(fetch, {
       apiKey: "pat_secret",
       baseUrl: "https://example.test",
-      fetch,
     });
 
     const error = await client.sandboxes.get("wrk-1").catch((caught) => caught);
@@ -123,11 +128,9 @@ describe("TargonClient", () => {
         }),
       json(sandbox),
     );
-    const client = new TargonClient({
-      organization: "acme",
+    const client = testClient(fetch, {
       apiKey: "pat_secret",
       baseUrl: "https://example.test",
-      fetch,
     });
     const template = await client.sandboxTemplates.get("sbt-base");
 
@@ -141,6 +144,10 @@ describe("TargonClient", () => {
     assert.equal(typeof result.exec, "function");
     assert.equal(typeof result.files.read, "function");
     assert.equal(typeof result.terminals.connect, "function");
+    assert.throws(
+      () => ((result as unknown as { name: string }).name = "changed"),
+      TypeError,
+    );
     assert.equal(fetch.calls.length, 5);
     const [url, init] = fetch.calls[1]!;
     assert.equal(url, "https://example.test/tha/v3/orgs/acme/workloads");
@@ -161,12 +168,7 @@ describe("TargonClient", () => {
       json({ uid: childData.uid, type: "" }),
       json(childData),
     );
-    const client = new TargonClient({
-      organization: "acme",
-      apiKey: "key",
-      baseUrl: "https://example.test",
-      fetch,
-    });
+    const client = testClient(fetch, { baseUrl: "https://example.test" });
     const template = await client.sandboxTemplates.get("sbt-base");
 
     const created = await client.sandboxes.create({
@@ -223,11 +225,7 @@ describe("TargonClient", () => {
         }),
       json({ ...sandbox, state: { ...summary.state, status: "running" } }),
     );
-    const client = new TargonClient({
-      organization: "acme",
-      apiKey: "key",
-      fetch,
-    });
+    const client = testClient(fetch);
 
     assert.ok(await client.sandboxes.freeze(sandbox.uid) instanceof Sandbox);
     assert.ok(await client.sandboxes.thaw(sandbox.uid) instanceof Sandbox);
@@ -239,11 +237,7 @@ describe("TargonClient", () => {
       json({ type: "" }),
       json({ uid: sandbox.uid, type: "VM" }),
     );
-    const client = new TargonClient({
-      organization: "acme",
-      apiKey: "key",
-      fetch,
-    });
+    const client = testClient(fetch);
 
     await assert.rejects(client.sandboxes.freeze(sandbox.uid), /non-empty uid/);
     await assert.rejects(client.sandboxes.thaw(sandbox.uid), /not a sandbox/);
@@ -253,16 +247,15 @@ describe("TargonClient", () => {
   it("supports service and hydrated resource execution methods", async () => {
     const execResult = { stdout: "ok\n", stderr: "", code: 0, timed_out: false };
     const fetch = mockFetch(json(sandbox), json(execResult), json(execResult));
-    const client = new TargonClient({
-      organization: "acme",
-      apiKey: "key",
-      baseUrl: "https://example.test",
-      fetch,
-    });
+    const client = testClient(fetch, { baseUrl: "https://example.test" });
     const resource = await client.sandboxes.get("wrk-1");
 
     assert.deepEqual(await client.sandboxes.exec("wrk-1", "echo service"), execResult);
     assert.deepEqual(await resource.exec("echo resource"), execResult);
+    assert.equal("readFile" in resource, false);
+    assert.equal("writeFile" in resource, false);
+    assert.equal("readFile" in client.sandboxes, false);
+    assert.equal("writeFile" in client.sandboxes, false);
     assert.equal(JSON.stringify(resource), JSON.stringify(sandbox));
     assert.equal("files" in JSON.parse(JSON.stringify(resource)), false);
     assert.deepEqual(fetch.calls.slice(1).map(([, init]) => JSON.parse(String(init?.body))), [
@@ -273,11 +266,7 @@ describe("TargonClient", () => {
 
   it("returns explicit sparse summaries from list without N+1 requests", async () => {
     const fetch = mockFetch(json({ items: [summary], next_cursor: "next" }));
-    const client = new TargonClient({
-      organization: "acme",
-      apiKey: "key",
-      fetch,
-    });
+    const client = testClient(fetch);
 
     const page = await client.sandboxes.list();
 
@@ -299,17 +288,16 @@ describe("TargonClient", () => {
       json({ ...summary, state: { ...summary.state, status: "provisioning" } }),
       json(sandbox),
     );
-    const client = new TargonClient({
-      organization: "acme",
-      apiKey: "key",
-      baseUrl: "https://example.test",
-      fetch,
-    });
+    const client = testClient(fetch, { baseUrl: "https://example.test" });
 
     const page = await client.sandboxTemplates.list();
     const template = page.items[0]!;
 
     assert.ok(template instanceof SandboxTemplate);
+    assert.throws(
+      () => ((template as unknown as { status: string }).status = "FAILED"),
+      TypeError,
+    );
     assert.ok(await template.refresh() instanceof SandboxTemplate);
     assertSubset(await template.update({ display_name: "Base template" }), {
       display_name: "Base template",
@@ -334,16 +322,8 @@ describe("TargonClient", () => {
       json({ ...templateData, uid: " " }),
       json({ ...templateData, status: "PENDING" }),
     );
-    const first = new TargonClient({
-      organization: "acme",
-      apiKey: "key",
-      fetch: firstFetch,
-    });
-    const second = new TargonClient({
-      organization: "acme",
-      apiKey: "key",
-      fetch: mockFetch(json(templateData)),
-    });
+    const first = testClient(firstFetch);
+    const second = testClient(mockFetch(json(templateData)));
     const ready = await first.sandboxTemplates.get("sbt-base");
     const emptyUID = await first.sandboxTemplates.get("empty");
     const pending = await first.sandboxTemplates.get("pending");
@@ -377,10 +357,6 @@ describe("TargonClient", () => {
       }),
       /from this TargonClient/,
     );
-    assert.throws(
-      () => Reflect.construct(SandboxTemplate, [first.sandboxTemplates, templateData]),
-      /must be obtained from a service/,
-    );
     assert.equal(ready.status, "READY");
   });
 
@@ -398,11 +374,7 @@ describe("TargonClient", () => {
           updated_at: sandbox.updated_at,
         }),
     );
-    const client = new TargonClient({
-      organization: "acme",
-      apiKey: "key",
-      fetch,
-    });
+    const client = testClient(fetch);
 
     await assert.rejects(client.sandboxes.list(), /not a sandbox/);
     await assert.rejects(client.sandboxes.get("wrk-1"), /not a sandbox/);
@@ -430,11 +402,7 @@ describe("TargonClient", () => {
           updated_at: sandbox.updated_at,
         }),
     );
-    const client = new TargonClient({
-      organization: "acme",
-      apiKey: "key",
-      fetch,
-    });
+    const client = testClient(fetch);
 
     await assert.rejects(
       client.sandboxes.waitForStatus("wrk-1", "running"),
@@ -448,11 +416,7 @@ describe("TargonClient", () => {
   });
 
   it("validates names, ports, timeouts, limits, and guest paths", async () => {
-    const client = new TargonClient({
-      organization: "acme",
-      apiKey: "key",
-      fetch: mockFetch(),
-    });
+    const client = testClient();
     await assert.rejects(
       client.sandboxes.create({
         name: "Bad Name",
@@ -463,7 +427,7 @@ describe("TargonClient", () => {
     assert.throws(() => client.sandboxes.list({ limit: 1001 }), /limit/);
     assert.throws(() => client.sandboxes.exec("wrk-1", "x", 601), /timeoutSec/);
     assert.throws(
-      () => client.sandboxes.writeFile("wrk-1", "relative", new Uint8Array()),
+      () => client.sandboxes.files.write("wrk-1", "relative", new Uint8Array()),
       /absolute/,
     );
     await assert.rejects(client.sandboxes.update("wrk-1", {}), /at least one/);
@@ -493,17 +457,16 @@ describe("TargonClient", () => {
     const fetch = mockFetch(
       json({ path: "/tmp/data", content_b64: "AP+A" }),
       json(undefined, 204),
+      json(sandbox),
+      json({ path: "/tmp/data", content_b64: "AP+A" }),
+      json(undefined, 204),
     );
-    const client = new TargonClient({
-      organization: "acme",
-      apiKey: "key",
-      fetch,
-    });
+    const client = testClient(fetch);
 
-    assert.deepEqual(await client.sandboxes.readFile("wrk-1", "/tmp/data"),
+    assert.deepEqual(await client.sandboxes.files.read("wrk-1", "/tmp/data"),
       new Uint8Array([0, 255, 128]),
     );
-    await client.sandboxes.writeFile(
+    await client.sandboxes.files.write(
       "wrk-1",
       "/tmp/data",
       new Uint8Array([0, 255, 128]),
@@ -512,25 +475,26 @@ describe("TargonClient", () => {
       path: "/tmp/data",
       content_b64: "AP+A",
     });
+    const resource = await client.sandboxes.get("wrk-1");
+    assert.deepEqual(await resource.files.read("/tmp/data"),
+      new Uint8Array([0, 255, 128]),
+    );
+    await resource.files.write("/tmp/data", new Uint8Array([0, 255, 128]));
   });
 
   it("maps API failures to typed errors", async () => {
-    const client = new TargonClient({
-      organization: "acme",
-      apiKey: "key",
-      fetch: mockFetch(
-        json(
-          {
-            error: "too large",
-            reason: "WORKLOAD_SANDBOX_PAYLOAD_TOO_LARGE",
-          },
-          413,
-        ),
+    const client = testClient(mockFetch(
+      json(
+        {
+          error: "too large",
+          reason: "WORKLOAD_SANDBOX_PAYLOAD_TOO_LARGE",
+        },
+        413,
       ),
-    });
+    ));
 
     await assert.rejects(
-      client.sandboxes.readFile("wrk-1", "/big"),
+      client.sandboxes.files.read("wrk-1", "/big"),
       PayloadTooLargeError,
     );
   });
@@ -557,11 +521,7 @@ describe("TargonClient", () => {
           updated_at: sandbox.updated_at,
         }),
     );
-    const client = new TargonClient({
-      organization: "acme",
-      apiKey: "key",
-      fetch,
-    });
+    const client = testClient(fetch);
 
     await assert.rejects(
       client.sandboxes.publish("wrk-1", { name: "new" }),
@@ -572,11 +532,7 @@ describe("TargonClient", () => {
   it("returns a hydrated template from no-wait publish", async () => {
     const pending = { ...templateData, uid: "sbt-new", status: "PENDING" as const };
     const fetch = mockFetch(json(pending));
-    const client = new TargonClient({
-      organization: "acme",
-      apiKey: "key",
-      fetch,
-    });
+    const client = testClient(fetch);
 
     const template = await client.sandboxes.publish("wrk-1", {
       name: "new",
@@ -602,12 +558,7 @@ describe("TargonClient", () => {
       close(): void {}
       addEventListener(): void {}
     }
-    const client = new TargonClient({
-      organization: "acme",
-      apiKey: "key",
-      baseUrl: "https://example.test",
-      fetch,
-    });
+    const client = testClient(fetch, { baseUrl: "https://example.test" });
 
     await client.sandboxes.terminals.connect("wrk-1", "term.1", {
       WebSocket: FakeWebSocket,

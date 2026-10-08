@@ -5,6 +5,7 @@
     "moduleResolution": "NodeNext",
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "declaration": true,
+    "stripInternal": true,
     "outDir": "./dist",
     "rootDir": "./src",
     "strict": true,

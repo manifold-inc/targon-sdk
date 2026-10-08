@@ -31,13 +31,16 @@ const sandbox = await client.sandboxes.create({
 const result = await client.sandboxes.exec(sandbox.uid, "python --version");
 // The returned Sandbox is hydrated; service methods remain available too.
 const sameResult = await sandbox.exec("python --version");
-await client.sandboxes.writeFile(
+await client.sandboxes.files.write(
   sandbox.uid,
   "/tmp/input.bin",
   new Uint8Array([0, 1, 2]),
 );
 await sandbox.files.write("/tmp/other.bin", new Uint8Array([3, 4, 5]));
 ```
+
+File access is available through `client.sandboxes.files.read/write(uid, ...)`
+or the bound `sandbox.files.read/write(...)` helpers.
 
 The client also supports listing/updating/deleting sandboxes, SSH keys,
 freeze/thaw, fork, publish and template polling, binary files, access tickets,
