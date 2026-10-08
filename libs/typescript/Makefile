@@ -4,10 +4,10 @@ build:
 	npm run build
 
 test:
-	@echo "no typescript tests defined yet"
+	npm test
 
 lint:
-	npx tsc --noEmit
+	npm run typecheck
 
 fmt:
 	@echo "no formatter configured"
