@@ -86,8 +86,8 @@ client = Client(
 
 ## Sandboxes
 
-Sandbox templates are fetched resources. Their public data is read-only, and
-their methods stay bound to the client that fetched them:
+Sandboxes and templates are fetched, frozen resources with explicit read-only
+fields. Their methods stay bound to the client that fetched them:
 
 ```python
 from targon import SandboxCreateParams, SandboxTemplateStatus
@@ -118,6 +118,28 @@ other = template.create_sandbox(
 Template resources also provide `refresh()`, `update(...)`, and `delete()`.
 Only a bound, READY template resource can create a sandbox; raw template IDs
 are not accepted.
+
+File and terminal operations are grouped under bound capabilities:
+
+```python
+sandbox.files.write("/tmp/hello.txt", "hello")
+contents = sandbox.files.read("/tmp/hello.txt", as_text=True)
+
+terminal = sandbox.terminals.create(cols=100, rows=30)
+with sandbox.terminals.connect(terminal.id) as connection:
+    connection.send(b"pwd\n")
+```
+
+For applications that operate by workload ID, the equivalent service APIs
+remain available as `client.sandboxes.files` and
+`client.sandboxes.terminals`.
+
+The former direct resource aliases (`read_file`, `write_file`,
+`list_terminals`, `create_terminal`, `delete_terminal`, and
+`connect_terminal`) have been removed in favor of these capability objects.
+`SandboxTemplate.create_sandbox` now accepts only the resource form shown
+above; use `client.sandboxes.create(SandboxCreateParams(...))` for the service
+form.
 
 ## Migration from 0.1
 
