@@ -65,15 +65,7 @@ type VolumeService struct {
 }
 
 func (s *VolumeService) path(parts ...string) (string, error) {
-	org, err := s.client.RequireOrg()
-	if err != nil {
-		return "", err
-	}
-	p, err := orgPath(org, "volumes")
-	if err != nil {
-		return "", err
-	}
-	return joinPath(p, parts...), nil
+	return s.client.orgResourcePath("volumes", parts...)
 }
 
 func (s *VolumeService) Create(ctx context.Context, name string, sizeInMB int, resourceName string) (*VolumeOperationResponse, error) {

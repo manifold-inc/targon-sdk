@@ -5,13 +5,10 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
 )
-
-var sandboxNamePattern = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$`)
 
 // SandboxesService manages first-class SANDBOX workloads.
 type SandboxesService struct {
@@ -29,15 +26,7 @@ type Sandbox struct {
 }
 
 func (s *SandboxesService) path(parts ...string) (string, error) {
-	org, err := s.client.RequireOrg()
-	if err != nil {
-		return "", err
-	}
-	p, err := orgPath(org, "workloads")
-	if err != nil {
-		return "", err
-	}
-	return joinPath(p, parts...), nil
+	return s.client.orgResourcePath("workloads", parts...)
 }
 
 // CreateSandbox is a convenience wrapper around Client.Sandboxes.Create.
@@ -351,8 +340,8 @@ func (s *SandboxesService) Publish(ctx context.Context, workloadUID string, para
 	if err := validateTemplateName(params.Name); err != nil {
 		return nil, err
 	}
-	if len(strings.TrimSpace(params.DisplayName)) > 128 {
-		return nil, validation("display_name must be at most 128 characters", "display_name", params.DisplayName)
+	if err := validateDisplayName(params.DisplayName); err != nil {
+		return nil, err
 	}
 	path, err := s.path(workloadUID, "publish")
 	if err != nil {
@@ -438,38 +427,33 @@ func (s *SandboxesService) WaitForStatus(ctx context.Context, workloadUID, targe
 		return nil, err
 	}
 	timeout, interval := waitDurations(options)
-	deadline := time.Now().Add(timeout)
-	for {
+	lastStatus := ""
+	return pollUntil(ctx, timeout, interval, func() (*Sandbox, bool, error) {
 		state, err := s.GetState(ctx, workloadUID)
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
+		lastStatus = state.Status
 		status := strings.ToLower(state.Status)
 		if status == strings.ToLower(target) {
-			return s.Get(ctx, workloadUID)
+			sandbox, err := s.Get(ctx, workloadUID)
+			return sandbox, true, err
 		}
 		if status == "error" || status == "deleted" || status == "suspended" {
-			return nil, &SandboxStateError{APIError: APIError{
+			return nil, false, &SandboxStateError{APIError: APIError{
 				StatusCode:  http.StatusConflict,
 				Message:     fmt.Sprintf("sandbox %s entered terminal state %q: %s", workloadUID, state.Status, state.Message),
 				Reason:      "WORKLOAD_SANDBOX_INVALID_STATE",
 				WorkloadUID: workloadUID,
 			}}
 		}
-		if time.Now().After(deadline) {
-			return nil, &TimeoutError{
-				Message: fmt.Sprintf("sandbox %s did not reach %q within %.0fs (last status: %q)", workloadUID, target, timeout.Seconds(), state.Status),
-				Timeout: timeout.Seconds(),
-			}
+		return nil, false, nil
+	}, func(*Sandbox) error {
+		return &TimeoutError{
+			Message: fmt.Sprintf("sandbox %s did not reach %q within %.0fs (last status: %q)", workloadUID, target, timeout.Seconds(), lastStatus),
+			Timeout: timeout.Seconds(),
 		}
-		timer := time.NewTimer(interval)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-			return nil, ctx.Err()
-		case <-timer.C:
-		}
-	}
+	})
 }
 
 func requireSandboxWorkload(workload *Workload) error {
@@ -493,85 +477,6 @@ func requireSandboxType(workloadUID, workloadType string) error {
 		Reason:      "WORKLOAD_SANDBOX_TYPE_MISMATCH",
 		WorkloadUID: workloadUID,
 	}}
-}
-
-func validateSandboxName(name, field string) error {
-	if !sandboxNamePattern.MatchString(strings.TrimSpace(name)) {
-		return validation("name must be 1-32 lowercase alphanumeric characters or hyphens, without leading or trailing hyphens", field, name)
-	}
-	return nil
-}
-
-func validateTemplateName(name string) error {
-	name = strings.TrimSpace(name)
-	if ok, _ := regexp.MatchString(`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$`, name); !ok {
-		return validation("name must be 1-64 letters, digits, '.', '_' or '-', starting with a letter or digit", "name", name)
-	}
-	return nil
-}
-
-func validateSandboxConfigForCreate(config *SandboxConfigInput) error {
-	if config == nil {
-		return nil
-	}
-	if config.TTLSec != nil && *config.TTLSec < 0 {
-		return validation("sandbox_config.ttl_sec must be zero or positive", "sandbox_config.ttl_sec", *config.TTLSec)
-	}
-	if config.IdleTimeoutSec != nil && *config.IdleTimeoutSec < 0 {
-		return validation("sandbox_config.idle_timeout_sec must be zero or positive", "sandbox_config.idle_timeout_sec", *config.IdleTimeoutSec)
-	}
-	if config.TTLSec != nil && config.IdleTimeoutSec != nil &&
-		*config.TTLSec > 0 && *config.IdleTimeoutSec > 0 && *config.IdleTimeoutSec >= *config.TTLSec {
-		return validation("sandbox_config.idle_timeout_sec must be less than ttl_sec", "sandbox_config.idle_timeout_sec", *config.IdleTimeoutSec)
-	}
-	return nil
-}
-
-func validateSandboxConfigForUpdate(config *SandboxConfigInput) error {
-	if err := validateSandboxConfigForCreate(config); err != nil || config == nil {
-		return err
-	}
-	if config.IdleTimeoutSec != nil && *config.IdleTimeoutSec == 0 {
-		return validation("sandbox_config.idle_timeout_sec must be positive", "sandbox_config.idle_timeout_sec", *config.IdleTimeoutSec)
-	}
-	return nil
-}
-
-func validateSandboxPorts(ports []PortConfig) error {
-	seen := map[string]struct{}{}
-	for _, port := range ports {
-		if port.Port < 1 || port.Port > 65535 {
-			return validation("sandbox port must be between 1 and 65535", "ports", port.Port)
-		}
-		if port.Port == 22 {
-			return validation("sandbox port 22 is reserved for SSH and cannot be forwarded", "ports", port.Port)
-		}
-		protocol := strings.ToUpper(strings.TrimSpace(port.Protocol))
-		if protocol == "" {
-			protocol = "TCP"
-		}
-		if protocol != "TCP" && protocol != "UDP" {
-			return validation("sandbox ports only support TCP or UDP", "ports", port.Protocol)
-		}
-		key := strconv.Itoa(port.Port) + "/" + protocol
-		if _, ok := seen[key]; ok {
-			return validation("duplicate sandbox port and protocol combination", "ports", key)
-		}
-		seen[key] = struct{}{}
-	}
-	return nil
-}
-
-func normalizedSandboxPorts(ports []PortConfig) []PortConfig {
-	out := append([]PortConfig(nil), ports...)
-	for i := range out {
-		out[i].Protocol = strings.ToUpper(strings.TrimSpace(out[i].Protocol))
-		if out[i].Protocol == "" {
-			out[i].Protocol = "TCP"
-		}
-		out[i].Routing = ""
-	}
-	return out
 }
 
 func validatePage(page Page) error {

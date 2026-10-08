@@ -17,15 +17,7 @@ type SSHKeyService struct {
 }
 
 func (s *SSHKeyService) path(uid string) (string, error) {
-	org, err := s.client.RequireOrg()
-	if err != nil {
-		return "", err
-	}
-	p, err := orgPath(org, "ssh-keys")
-	if err != nil {
-		return "", err
-	}
-	return joinPath(p, uid), nil
+	return s.client.orgResourcePath("ssh-keys", uid)
 }
 
 func (s *SSHKeyService) Create(ctx context.Context, name, sshKey string) (*SSHKey, error) {

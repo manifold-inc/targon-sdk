@@ -463,15 +463,7 @@ type WorkloadService struct {
 }
 
 func (s *WorkloadService) path(parts ...string) (string, error) {
-	org, err := s.client.RequireOrg()
-	if err != nil {
-		return "", err
-	}
-	p, err := orgPath(org, "workloads")
-	if err != nil {
-		return "", err
-	}
-	return joinPath(p, parts...), nil
+	return s.client.orgResourcePath("workloads", parts...)
 }
 
 func (s *WorkloadService) Create(ctx context.Context, req CreateWorkloadRequest) (*Workload, error) {
@@ -607,37 +599,31 @@ func (s *WorkloadService) WaitUntilReady(ctx context.Context, workloadUID string
 	if pollInterval <= 0 {
 		pollInterval = 5 * time.Second
 	}
-	deadline := time.Now().Add(timeout)
-	for {
+	var lastStatus string
+	return pollUntil(ctx, timeout, pollInterval, func() (*WorkloadStateResponse, bool, error) {
 		state, err := s.GetState(ctx, workloadUID)
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
+		lastStatus = state.Status
 		status := strings.ToLower(state.Status)
 		if status == "running" {
-			return state, nil
+			return state, true, nil
 		}
 		if _, ok := terminalWorkloadStates[status]; ok {
 			msg := fmt.Sprintf("Workload %s entered terminal state '%s' before becoming ready", workloadUID, state.Status)
 			if state.Message != "" {
 				msg += ": " + state.Message
 			}
-			return nil, &Error{Message: msg}
+			return nil, false, &Error{Message: msg}
 		}
-		if time.Now().After(deadline) {
-			return nil, &TimeoutError{
-				Message: fmt.Sprintf("Workload %s was not ready within %.0fs (last status: '%s')", workloadUID, timeout.Seconds(), state.Status),
-				Timeout: timeout.Seconds(),
-			}
+		return state, false, nil
+	}, func(*WorkloadStateResponse) error {
+		return &TimeoutError{
+			Message: fmt.Sprintf("Workload %s was not ready within %.0fs (last status: '%s')", workloadUID, timeout.Seconds(), lastStatus),
+			Timeout: timeout.Seconds(),
 		}
-		timer := time.NewTimer(pollInterval)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-			return nil, ctx.Err()
-		case <-timer.C:
-		}
-	}
+	})
 }
 
 func (s *WorkloadService) GetEvents(ctx context.Context, workloadUID string, page Page) (List[WorkloadEvent], error) {

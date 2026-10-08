@@ -19,47 +19,49 @@ func (t *SandboxTemplate) replace(updated *SandboxTemplate) *SandboxTemplate {
 	return t
 }
 
-// Refresh reloads this template into the same resource object.
-func (t *SandboxTemplate) Refresh(ctx context.Context) (*SandboxTemplate, error) {
+func sandboxTemplateCall[T any](t *SandboxTemplate, call func(*SandboxTemplatesService, string) (T, error)) (T, error) {
 	service, err := t.boundService()
 	if err != nil {
-		return nil, err
+		var zero T
+		return zero, err
 	}
-	updated, err := service.Get(ctx, t.UID)
+	return call(service, t.UID)
+}
+
+func (t *SandboxTemplate) mutate(call func(*SandboxTemplatesService, string) (*SandboxTemplate, error)) (*SandboxTemplate, error) {
+	updated, err := sandboxTemplateCall(t, call)
 	if err != nil {
 		return nil, err
 	}
 	return t.replace(updated), nil
+}
+
+// Refresh reloads this template into the same resource object.
+func (t *SandboxTemplate) Refresh(ctx context.Context) (*SandboxTemplate, error) {
+	return t.mutate(func(service *SandboxTemplatesService, uid string) (*SandboxTemplate, error) {
+		return service.Get(ctx, uid)
+	})
 }
 
 // Update changes the template and reloads this resource object.
 func (t *SandboxTemplate) Update(ctx context.Context, params UpdateSandboxTemplateParams) (*SandboxTemplate, error) {
-	service, err := t.boundService()
-	if err != nil {
-		return nil, err
-	}
-	updated, err := service.Update(ctx, t.UID, params)
-	if err != nil {
-		return nil, err
-	}
-	return t.replace(updated), nil
+	return t.mutate(func(service *SandboxTemplatesService, uid string) (*SandboxTemplate, error) {
+		return service.Update(ctx, uid, params)
+	})
 }
 
 // Delete removes this template.
 func (t *SandboxTemplate) Delete(ctx context.Context) error {
-	service, err := t.boundService()
-	if err != nil {
-		return err
-	}
-	return service.Delete(ctx, t.UID)
+	_, err := sandboxTemplateCall(t, func(service *SandboxTemplatesService, uid string) (struct{}, error) {
+		return struct{}{}, service.Delete(ctx, uid)
+	})
+	return err
 }
 
 // CreateSandbox creates a sandbox from this template.
 func (t *SandboxTemplate) CreateSandbox(ctx context.Context, params SandboxCreateParams) (*Sandbox, error) {
-	service, err := t.boundService()
-	if err != nil {
-		return nil, err
-	}
-	params.Template = t
-	return service.client.Sandboxes.Create(ctx, params)
+	return sandboxTemplateCall(t, func(service *SandboxTemplatesService, _ string) (*Sandbox, error) {
+		params.Template = t
+		return service.client.Sandboxes.Create(ctx, params)
+	})
 }

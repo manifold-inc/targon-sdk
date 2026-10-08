@@ -16,15 +16,7 @@ type ProjectService struct {
 }
 
 func (s *ProjectService) path(uid string) (string, error) {
-	org, err := s.client.RequireOrg()
-	if err != nil {
-		return "", err
-	}
-	p, err := orgPath(org, "projects")
-	if err != nil {
-		return "", err
-	}
-	return joinPath(p, uid), nil
+	return s.client.orgResourcePath("projects", uid)
 }
 
 func (s *ProjectService) Create(ctx context.Context, name string) (*Project, error) {

@@ -7,14 +7,10 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"regexp"
-	"strings"
 	"time"
 
 	"github.com/coder/websocket"
 )
-
-var terminalIDPattern = regexp.MustCompile(`^[A-Za-z0-9._-]{1,64}$`)
 
 type SandboxTerminalsService struct {
 	sandboxes *SandboxesService
@@ -67,8 +63,8 @@ func (s *SandboxTerminalsService) Delete(ctx context.Context, workloadUID, termi
 	if err != nil {
 		return err
 	}
-	if !terminalIDPattern.MatchString(strings.TrimSpace(terminalID)) {
-		return validation("terminal_id must be 1-64 letters, digits, '.', '_', or '-'", "terminal_id", terminalID)
+	if err := validateTerminalID(terminalID); err != nil {
+		return err
 	}
 	path, err := s.sandboxes.path(workloadUID, "terminals", terminalID)
 	if err != nil {
@@ -84,8 +80,8 @@ func (s *SandboxTerminalsService) Connect(ctx context.Context, workloadUID, term
 	if err != nil {
 		return nil, err
 	}
-	if !terminalIDPattern.MatchString(strings.TrimSpace(terminalID)) {
-		return nil, validation("terminal_id must be 1-64 letters, digits, '.', '_', or '-'", "terminal_id", terminalID)
+	if err := validateTerminalID(terminalID); err != nil {
+		return nil, err
 	}
 	path, err := s.sandboxes.path(workloadUID, "terminals", terminalID, "ws")
 	if err != nil {

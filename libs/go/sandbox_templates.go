@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
-	"strings"
-	"time"
 )
 
 type SandboxTemplatesService struct {
@@ -22,15 +20,7 @@ func hydrateSandboxTemplate(service *SandboxTemplatesService, template *SandboxT
 }
 
 func (s *SandboxTemplatesService) path(parts ...string) (string, error) {
-	org, err := s.client.RequireOrg()
-	if err != nil {
-		return "", err
-	}
-	p, err := orgPath(org, "sandbox-templates")
-	if err != nil {
-		return "", err
-	}
-	return joinPath(p, parts...), nil
+	return s.client.orgResourcePath("sandbox-templates", parts...)
 }
 
 func (s *SandboxTemplatesService) List(ctx context.Context, params ListSandboxTemplatesParams) (List[SandboxTemplate], error) {
@@ -95,8 +85,10 @@ func (s *SandboxTemplatesService) Update(ctx context.Context, templateUID string
 	if params.DisplayName == nil && params.Description == nil {
 		return nil, validation("display_name or description is required", "update", nil)
 	}
-	if params.DisplayName != nil && len(strings.TrimSpace(*params.DisplayName)) > 128 {
-		return nil, validation("display_name must be at most 128 characters", "display_name", *params.DisplayName)
+	if params.DisplayName != nil {
+		if err := validateDisplayName(*params.DisplayName); err != nil {
+			return nil, err
+		}
 	}
 	path, err := s.path(templateUID)
 	if err != nil {
@@ -123,39 +115,33 @@ func (s *SandboxTemplatesService) Delete(ctx context.Context, templateUID string
 
 func (s *SandboxTemplatesService) waitUntilReady(ctx context.Context, templateUID, workloadUID string, options WaitOptions) (*SandboxTemplate, error) {
 	timeout, interval := waitDurations(options)
-	deadline := time.Now().Add(timeout)
-	for {
+	var lastStatus SandboxTemplateStatus
+	return pollUntil(ctx, timeout, interval, func() (*SandboxTemplate, bool, error) {
 		template, err := s.Get(ctx, templateUID)
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
+		lastStatus = template.Status
 		switch template.Status {
 		case SandboxTemplateStatusReady:
-			return template, nil
+			return template, true, nil
 		case SandboxTemplateStatusFailed:
 			message := fmt.Sprintf("sandbox template %s failed to publish", templateUID)
 			if template.StatusMessage != nil && *template.StatusMessage != "" {
 				message += ": " + *template.StatusMessage
 			}
-			return nil, &SandboxTemplateError{APIError: APIError{
+			return nil, false, &SandboxTemplateError{APIError: APIError{
 				StatusCode:  http.StatusConflict,
 				Message:     message,
 				Reason:      "SANDBOX_TEMPLATE_PUBLISH_FAILED",
 				WorkloadUID: workloadUID,
 			}}
 		}
-		if time.Now().After(deadline) {
-			return nil, &TimeoutError{
-				Message: fmt.Sprintf("sandbox template %s was not ready within %.0fs (last status: %q)", templateUID, timeout.Seconds(), template.Status),
-				Timeout: timeout.Seconds(),
-			}
+		return nil, false, nil
+	}, func(*SandboxTemplate) error {
+		return &TimeoutError{
+			Message: fmt.Sprintf("sandbox template %s was not ready within %.0fs (last status: %q)", templateUID, timeout.Seconds(), lastStatus),
+			Timeout: timeout.Seconds(),
 		}
-		timer := time.NewTimer(interval)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-			return nil, ctx.Err()
-		case <-timer.C:
-		}
-	}
+	})
 }

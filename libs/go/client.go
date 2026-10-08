@@ -83,6 +83,18 @@ func (c *Client) RequireOrg() (string, error) {
 	return c.cfg.RequireOrg()
 }
 
+func (c *Client) orgResourcePath(resource string, parts ...string) (string, error) {
+	org, err := c.RequireOrg()
+	if err != nil {
+		return "", err
+	}
+	path, err := orgPath(org, resource)
+	if err != nil {
+		return "", err
+	}
+	return joinPath(path, parts...), nil
+}
+
 // ForOrg returns a client bound to slug that shares this client's HTTP transport.
 func (c *Client) ForOrg(slug string) (*Client, error) {
 	slug = strings.TrimSpace(slug)
