@@ -5,7 +5,7 @@ Python SDK to interact with Targon workloads.
 ## Installation
 
 ```bash
-pip install targon-sdk
+pip install --pre "targon-sdk==4.0.0rc1"
 ```
 
 ## Quickstart
@@ -83,6 +83,41 @@ client = Client(
     verify_ssl=True,
 )
 ```
+
+## Sandboxes
+
+Sandbox templates are fetched resources. Their public data is read-only, and
+their methods stay bound to the client that fetched them:
+
+```python
+from targon import SandboxCreateParams, SandboxTemplateStatus
+
+templates = client.sandboxes.templates.list(
+    status=SandboxTemplateStatus.READY,
+)
+template = templates.items[0]
+
+# Service API
+sandbox = client.sandboxes.create(
+    SandboxCreateParams(
+        name="my-sandbox",
+        template=template,
+        ttl_sec=3600,
+        idle_timeout_sec=300,
+    )
+)
+
+# Equivalent resource API
+other = template.create_sandbox(
+    "my-other-sandbox",
+    ttl_sec=3600,
+    idle_timeout_sec=300,
+)
+```
+
+Template resources also provide `refresh()`, `update(...)`, and `delete()`.
+Only a bound, READY template resource can create a sandbox; raw template IDs
+are not accepted.
 
 ## Migration from 0.1
 
