@@ -50,9 +50,11 @@ Package sources:
 - [Python](libs/python)
 - [TypeScript](libs/typescript)
 
-See the package README in each directory and the
+See the package README in each directory, the
+[sandbox cookbook](cookbook/README.md), and the
 [public Sandbox SDK documentation](https://docs.targon.com/sdk/sandboxes) for
-installation and usage.
+installation and usage. The cookbook is the place to copy programmatic
+create, exec, file, freeze, fork, and teardown flows.
 
 Release maintainers should follow [RELEASING.md](RELEASING.md) for package
 checks, GitHub environment secrets, component tags, and registry publication.

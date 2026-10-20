@@ -10,6 +10,7 @@ Component releases use prefixed tags (`cli/vX.Y.Z`, `python/vX.Y.Z`, …).
 ## [Unreleased]
 
 ### Added
+- Added a sandbox cookbook in `cookbook/` with runnable Python, Go, and TypeScript recipes for create/teardown, exec, files, reconnect, cleanup, timeouts, freeze/thaw, fork, publish, terminals, and desktop access.
 - Added first-class Sandbox APIs to the Go, Python, and TypeScript SDKs.
 - Added fetched, client-bound `SandboxTemplate` resources with refresh, update,
   delete, and sandbox-creation methods.
