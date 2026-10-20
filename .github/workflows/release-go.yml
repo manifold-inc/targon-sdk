@@ -1,0 +1,46 @@
+name: Validate Go release
+
+on:
+  push:
+    tags:
+      - "libs/go/v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate Go module tag
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: libs/go
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: libs/go/go.mod
+          cache-dependency-path: libs/go/go.sum
+      - run: go test ./...
+      - run: go vet ./...
+      - name: Verify module path and tag
+        if: github.ref_type == 'tag'
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          module="$(go list -m)"
+          test "$module" = "github.com/manifold-inc/targon-sdk/libs/go/v4" || {
+            echo "unexpected module path: $module" >&2
+            exit 1
+          }
+          tag_version="${TAG_NAME#libs/go/v}"
+          package_version="$(awk -F'\"' '/^const Version = / { print $2 }' version.go)"
+          test "$TAG_NAME" != "$tag_version" || {
+            echo "Go v4 releases require a libs/go/v* tag" >&2
+            exit 1
+          }
+          test "$tag_version" = "$package_version" || {
+            echo "tag $tag_version does not match package $package_version" >&2
+            exit 1
+          }

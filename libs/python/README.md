@@ -5,7 +5,7 @@ Python SDK to interact with Targon workloads.
 ## Installation
 
 ```bash
-pip install targon-sdk
+pip install --pre "targon-sdk==4.0.0rc1"
 ```
 
 ## Quickstart
@@ -83,6 +83,63 @@ client = Client(
     verify_ssl=True,
 )
 ```
+
+## Sandboxes
+
+Sandboxes and templates are fetched, frozen resources with explicit read-only
+fields. Their methods stay bound to the client that fetched them:
+
+```python
+from targon import SandboxCreateParams, SandboxTemplateStatus
+
+templates = client.sandboxes.templates.list(
+    status=SandboxTemplateStatus.READY,
+)
+template = templates.items[0]
+
+# Service API
+sandbox = client.sandboxes.create(
+    SandboxCreateParams(
+        name="my-sandbox",
+        template=template,
+        ttl_sec=3600,
+        idle_timeout_sec=300,
+    )
+)
+
+# Equivalent resource API
+other = template.create_sandbox(
+    "my-other-sandbox",
+    ttl_sec=3600,
+    idle_timeout_sec=300,
+)
+```
+
+Template resources also provide `refresh()`, `update(...)`, and `delete()`.
+Only a bound, READY template resource can create a sandbox; raw template IDs
+are not accepted.
+
+File and terminal operations are grouped under bound capabilities:
+
+```python
+sandbox.files.write("/tmp/hello.txt", "hello")
+contents = sandbox.files.read("/tmp/hello.txt", as_text=True)
+
+terminal = sandbox.terminals.create(cols=100, rows=30)
+with sandbox.terminals.connect(terminal.id) as connection:
+    connection.send(b"pwd\n")
+```
+
+For applications that operate by workload ID, the equivalent service APIs
+remain available as `client.sandboxes.files` and
+`client.sandboxes.terminals`.
+
+The former direct resource aliases (`read_file`, `write_file`,
+`list_terminals`, `create_terminal`, `delete_terminal`, and
+`connect_terminal`) have been removed in favor of these capability objects.
+`SandboxTemplate.create_sandbox` now accepts only the resource form shown
+above; use `client.sandboxes.create(SandboxCreateParams(...))` for the service
+form.
 
 ## Migration from 0.1
 

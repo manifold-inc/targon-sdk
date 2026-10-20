@@ -1,29 +1,33 @@
-import os
+import time
 
 import targon
 
-print("Creating sandbox")
-s = targon.Sandbox.create(
-    image="ubuntu",
-    resource=targon.Resources.H100_MEDIUM,
-    keep_alive=True,
-    org=os.environ["TARGON_ORG"],
+client = targon.Client.from_env()
+templates = client.sandboxes.templates.list(
+    status=targon.SandboxTemplateStatus.READY,
 )
-print(f"Sandbox created ({s.id})")
+if not templates.items:
+    raise RuntimeError("no READY sandbox template is available")
 
-response = s.exec('apt update && apt install -y wget', timeout=10)
-if response.exit_code != 0:
-    print(f"Error: {response.exit_code} {response.result}")
-else:
-    print(response.result)
+print("Creating sandbox")
+sandbox = templates.items[0].create_sandbox(
+    name=f"python-example-{int(time.time()) % 1_000_000}",
+    ttl_sec=900,
+    idle_timeout_sec=300,
+    timeout=600,
+    poll_interval=2,
+)
+print(f"Sandbox created ({sandbox.uid})")
 
+try:
+    response = sandbox.exec("python --version", timeout_sec=60)
+    if response.code != 0:
+        print(f"Error: {response.code} {response.stderr}")
+    else:
+        print(response.stdout)
+finally:
+    print("Removing sandbox")
+    sandbox.delete()
+    client.close()
 
-response = s.exec('wget https://releases.ubuntu.com/24.04.2/ubuntu-24.04.2-live-server-amd64.iso', timeout=10)
-if response.exit_code != 0:
-    print(f"Error: {response.exit_code} {response.result}")
-else:
-    print(response.result)
-
-print("Removing sandbox")
-targon.Sandbox.terminate(s)
 print("Sandbox removed")
