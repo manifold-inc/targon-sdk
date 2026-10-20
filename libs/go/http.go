@@ -131,10 +131,24 @@ func newHTTPClient(cfg Config, retries bool) *http.Client {
 	if retries && cfg.MaxRetries > 0 {
 		rt = &retryTransport{base: transport, maxRetries: cfg.MaxRetries}
 	}
-	return &http.Client{
-		Timeout:   cfg.Timeout,
-		Transport: rt,
+	// Timeout stays 0. A client-wide limit would cap exec and file calls at the
+	// default request deadline. doJSON applies Config.Timeout only when the
+	// request context has no deadline of its own.
+	return &http.Client{Transport: rt}
+}
+
+func (c *Client) withDefaultTimeout(ctx context.Context) (context.Context, context.CancelFunc) {
+	return withTimeoutIfNone(ctx, c.cfg.Timeout)
+}
+
+func withTimeoutIfNone(ctx context.Context, d time.Duration) (context.Context, context.CancelFunc) {
+	if d <= 0 {
+		return ctx, func() {}
 	}
+	if _, ok := ctx.Deadline(); ok {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(ctx, d)
 }
 
 func (c *Client) do(ctx context.Context, method, path string, query url.Values, body any, out any) error {
@@ -154,6 +168,8 @@ func noRetryFromContext(ctx context.Context) bool {
 }
 
 func (c *Client) doJSON(ctx context.Context, method, path string, query url.Values, body any, out any) error {
+	ctx, cancel := c.withDefaultTimeout(ctx)
+	defer cancel()
 	var reader io.Reader
 	if body != nil {
 		raw, err := json.Marshal(body)
@@ -227,6 +243,8 @@ func (c *Client) stream(ctx context.Context, method, path string, query url.Valu
 }
 
 func (c *Client) getText(ctx context.Context, path string, query url.Values) (string, error) {
+	ctx, cancel := c.withDefaultTimeout(ctx)
+	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.url(path, query), nil)
 	if err != nil {
 		return "", &NetworkError{Message: "failed to build request", Cause: err}

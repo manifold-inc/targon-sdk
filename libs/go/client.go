@@ -40,7 +40,6 @@ func New(cfg Config) (*Client, error) {
 		streamHTTP: newHTTPClient(resolved, false),
 		ownsHTTP:   true,
 	}
-	c.streamHTTP.Timeout = 0
 	c.initServices()
 	return c, nil
 }

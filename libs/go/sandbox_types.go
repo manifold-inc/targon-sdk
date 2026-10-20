@@ -13,6 +13,12 @@ const (
 	MaxSandboxFileBytes         = 256 << 20
 	MaxSandboxAccessTicketTTL   = 300
 	MaxSandboxTerminalDimension = 1000
+	// execTimeoutSlack is extra time beyond timeout_sec so the server can
+	// return the exec result after it stops the guest command.
+	execTimeoutSlack = 15 * time.Second
+	// sandboxFileTimeout bounds a file read or write when the caller did not
+	// set a context deadline. Payloads can be up to MaxSandboxFileBytes.
+	sandboxFileTimeout = 10 * time.Minute
 )
 
 type SandboxTemplateKind string

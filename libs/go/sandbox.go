@@ -374,6 +374,10 @@ func (s *SandboxesService) Exec(ctx context.Context, workloadUID, command string
 	if timeoutSec < 1 || timeoutSec > MaxSandboxExecTimeoutSec {
 		return nil, validation("timeout_sec must be between 1 and 600", "timeout_sec", timeoutSec)
 	}
+	// The server may hold the response until timeout_sec. Keep the connection
+	// open slightly longer so a timed-out command can still return its result.
+	ctx, cancel := context.WithTimeout(ctx, time.Duration(timeoutSec)*time.Second+execTimeoutSlack)
+	defer cancel()
 	path, err := s.path(workloadUID, "exec")
 	if err != nil {
 		return nil, err
@@ -427,8 +431,10 @@ func (s *SandboxesService) WaitForStatus(ctx context.Context, workloadUID, targe
 		return nil, err
 	}
 	timeout, interval := waitDurations(options)
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
 	lastStatus := ""
-	return pollUntil(ctx, timeout, interval, func() (*Sandbox, bool, error) {
+	return pollUntil(ctx, interval, func() (*Sandbox, bool, error) {
 		state, err := s.GetState(ctx, workloadUID)
 		if err != nil {
 			return nil, false, err

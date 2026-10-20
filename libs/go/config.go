@@ -8,10 +8,13 @@ import (
 
 // Config holds client authentication and transport settings.
 type Config struct {
-	APIKey     string
-	Org        string
-	Profile    string
-	BaseURL    string
+	APIKey  string
+	Org     string
+	Profile string
+	BaseURL string
+	// Timeout is the default deadline for an ordinary JSON request when the
+	// caller does not set one on the context. Exec, file transfer, and wait
+	// loops use their own deadlines and are not capped by this value.
 	Timeout    time.Duration
 	MaxRetries int
 	// SkipTLSVerify disables TLS certificate verification. Prefer leaving this

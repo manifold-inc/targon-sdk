@@ -25,6 +25,8 @@ func (s *SandboxFilesService) Read(ctx context.Context, workloadUID, guestPath s
 	if err != nil {
 		return nil, err
 	}
+	ctx, cancel := withTimeoutIfNone(ctx, sandboxFileTimeout)
+	defer cancel()
 	var out SandboxFileInfo
 	if err := s.sandboxes.client.do(ctx, http.MethodGet, path, url.Values{"path": {guestPath}}, nil, &out); err != nil {
 		return nil, err
@@ -52,6 +54,8 @@ func (s *SandboxFilesService) Write(ctx context.Context, workloadUID, guestPath 
 	if err != nil {
 		return err
 	}
+	ctx, cancel := withTimeoutIfNone(ctx, sandboxFileTimeout)
+	defer cancel()
 	payload := SandboxFileInfo{Path: guestPath, ContentB64: base64.StdEncoding.EncodeToString(data)}
 	return s.sandboxes.client.doNoRetry(ctx, http.MethodPut, path, nil, payload, nil)
 }

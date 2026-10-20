@@ -599,8 +599,10 @@ func (s *WorkloadService) WaitUntilReady(ctx context.Context, workloadUID string
 	if pollInterval <= 0 {
 		pollInterval = 5 * time.Second
 	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
 	var lastStatus string
-	return pollUntil(ctx, timeout, pollInterval, func() (*WorkloadStateResponse, bool, error) {
+	return pollUntil(ctx, pollInterval, func() (*WorkloadStateResponse, bool, error) {
 		state, err := s.GetState(ctx, workloadUID)
 		if err != nil {
 			return nil, false, err

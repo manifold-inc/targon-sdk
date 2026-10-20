@@ -115,8 +115,10 @@ func (s *SandboxTemplatesService) Delete(ctx context.Context, templateUID string
 
 func (s *SandboxTemplatesService) waitUntilReady(ctx context.Context, templateUID, workloadUID string, options WaitOptions) (*SandboxTemplate, error) {
 	timeout, interval := waitDurations(options)
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
 	var lastStatus SandboxTemplateStatus
-	return pollUntil(ctx, timeout, interval, func() (*SandboxTemplate, bool, error) {
+	return pollUntil(ctx, interval, func() (*SandboxTemplate, bool, error) {
 		template, err := s.Get(ctx, templateUID)
 		if err != nil {
 			return nil, false, err

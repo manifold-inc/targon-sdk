@@ -686,3 +686,65 @@ func TestSandboxExecPreservesOriginalCommandBytes(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestSandboxExecOutlivesClientTimeout(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || !strings.HasSuffix(r.URL.Path, "/exec") {
+			t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		timer := time.NewTimer(200 * time.Millisecond)
+		defer timer.Stop()
+		select {
+		case <-r.Context().Done():
+			return
+		case <-timer.C:
+		}
+		_ = json.NewEncoder(w).Encode(SandboxExecResult{Stdout: "ok\n", Code: 0})
+	}))
+	defer srv.Close()
+
+	c, err := New(Config{
+		APIKey: "test", Org: "acme", BaseURL: srv.URL, MaxRetries: 1, Timeout: 50 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	if c.http.Timeout != 0 {
+		t.Fatalf("shared client timeout = %s, want 0", c.http.Timeout)
+	}
+
+	result, err := c.Sandboxes.Exec(context.Background(), "wrk-1", "python --version", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Stdout != "ok\n" || result.Code != 0 {
+		t.Fatalf("%+v", result)
+	}
+}
+
+func TestDefaultRequestTimeout(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done()
+	}))
+	defer srv.Close()
+
+	c, err := New(Config{
+		APIKey: "test", Org: "acme", BaseURL: srv.URL, MaxRetries: 1, Timeout: 150 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+
+	start := time.Now()
+	_, err = c.Inventory.List(context.Background(), "", nil)
+	if err == nil {
+		t.Fatal("expected timeout")
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Fatalf("request ran for %s, want the 150ms default deadline", elapsed)
+	}
+}
