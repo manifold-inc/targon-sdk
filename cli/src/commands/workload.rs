@@ -8,8 +8,8 @@ use futures_util::{pin_mut, StreamExt};
 
 use crate::client::pagination::Page;
 use crate::client::types::{
-    CreateWorkloadRequest, EnvVar, ListWorkloadsParams, LogOptions, Port, PortProtocol,
-    PortRouting, VerifyWorkloadRequest, VolumeMount, Workload,
+    CreateWorkloadRequest, ListWorkloadsParams, LogOptions, Port, PortProtocol, PortRouting,
+    VerifyWorkloadRequest, Workload,
 };
 use crate::client::ClientError;
 use crate::commands::Context;
@@ -18,15 +18,15 @@ use crate::output::{format, palettes, progress, style, table};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum TypeFilter {
-    Rental,
     Vm,
+    Bm,
 }
 
 impl TypeFilter {
     pub fn api_value(self) -> String {
         match self {
-            TypeFilter::Rental => "RENTAL".to_string(),
             TypeFilter::Vm => "VM".to_string(),
+            TypeFilter::Bm => "BM".to_string(),
         }
     }
 }
@@ -287,12 +287,6 @@ async fn get(ctx: &Context, uid: &str) -> Result<()> {
     if let Some(project) = &workload.project_id {
         style::field("Project", project);
     }
-    for volume in &workload.volumes {
-        style::field(
-            "Volume",
-            format!("{} {} {}", volume.uid, style::ARROW, volume.mount_path),
-        );
-    }
     for key in &workload.ssh_keys {
         style::field("SSH key", format!("{} ({})", key.name, key.uid));
     }
@@ -480,8 +474,8 @@ pub(crate) async fn start_workload(ctx: &Context, uid: &str) -> Result<()> {
 
 #[derive(Clone, Copy)]
 pub(crate) enum DeployKind {
-    Rental,
     Vm,
+    Bm,
 }
 
 /// Full deploy flow with a live step checklist, ending with the deployed
@@ -561,14 +555,12 @@ pub(crate) async fn deploy_flow(
     }
     style::next_action("logs", format!("targon workload logs -f {}", workload.uid));
     match kind {
-        DeployKind::Rental => {
-            style::next_action(
-                "shell",
-                format!("targon rental exec {} -- bash", workload.uid),
-            );
-        }
         DeployKind::Vm => {
             style::next_action("connect", format!("targon workload get {}", workload.uid));
+        }
+        DeployKind::Bm => {
+            style::next_action("connect", format!("targon workload get {}", workload.uid));
+            style::next_action("events", format!("targon workload events {}", workload.uid));
         }
     }
     Ok(())
@@ -581,16 +573,6 @@ fn elapsed(from: Instant) -> String {
     } else {
         format!("{}m {}s", secs / 60, secs % 60)
     }
-}
-
-pub(crate) fn parse_env(raw: &str) -> Result<EnvVar> {
-    let (name, value) = raw
-        .split_once('=')
-        .ok_or_else(|| CliError::Config(format!("invalid --env '{raw}', expected KEY=VAL")))?;
-    Ok(EnvVar {
-        name: name.to_string(),
-        value: value.to_string(),
-    })
 }
 
 pub(crate) fn parse_port(raw: &str) -> Result<Port> {
@@ -621,26 +603,5 @@ pub(crate) fn parse_port(raw: &str) -> Result<Port> {
         port,
         protocol,
         routing,
-    })
-}
-
-pub(crate) fn parse_volume(raw: &str) -> Result<VolumeMount> {
-    let (uid, rest) = raw.split_once(':').ok_or_else(|| {
-        CliError::Config(format!("invalid --volume '{raw}', expected UID:/path[:ro]"))
-    })?;
-    let (mount_path, read_only) = match rest.rsplit_once(':') {
-        Some((path, "ro")) => (path.to_string(), true),
-        Some((path, "rw")) => (path.to_string(), false),
-        _ => (rest.to_string(), false),
-    };
-    if uid.is_empty() || mount_path.is_empty() {
-        return Err(CliError::Config(format!("invalid --volume '{raw}'")));
-    }
-    Ok(VolumeMount {
-        uid: uid.to_string(),
-        name: None,
-        mount_path,
-        read_only,
-        last_backup_at: None,
     })
 }

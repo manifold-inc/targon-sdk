@@ -29,7 +29,10 @@ pub enum StateKind {
 pub fn classify(status: &str) -> StateKind {
     match status.to_ascii_lowercase().as_str() {
         "running" | "ready" | "active" | "verified" => StateKind::Ok,
-        "provisioning" | "registered" | "pending" | "starting" | "creating" => StateKind::Pending,
+        "provisioning" | "registered" | "pending" | "starting" | "creating" | "powering_on"
+        | "powering_off" | "rebooting" | "erasing" | "deploying" | "wipe_verified" => {
+            StateKind::Pending
+        }
         "error" | "failed" => StateKind::Bad,
         "suspended" | "deleted" | "stopped" => StateKind::Idle,
         _ => StateKind::Unknown,
@@ -56,7 +59,7 @@ pub fn state_badge(status: &str) -> String {
     )
 }
 
-/// Workload type in its own hue (RENTAL blue, VM magenta).
+/// Workload type in its own hue (VM magenta, BM orange).
 pub fn type_badge(workload_type: &str) -> String {
     workload_type
         .color(palettes::workload_type_color(workload_type))
@@ -168,9 +171,7 @@ pub fn gpu_count(count: u32) -> String {
 pub fn inventory_type_label(resource_type: &str) -> String {
     match resource_type.to_ascii_lowercase().as_str() {
         "vm" => "VM".to_string(),
-        "rental" => "RENTAL".to_string(),
-        "serverless" | "srvless" => "SRVLESS".to_string(),
-        "storage" | "volume" => "STORAGE".to_string(),
+        "bm" | "baremetal" | "bare_metal" => "BM".to_string(),
         other => other.to_ascii_uppercase(),
     }
 }

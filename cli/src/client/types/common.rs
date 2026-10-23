@@ -1,4 +1,3 @@
-use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -48,31 +47,6 @@ pub struct Port {
     pub protocol: PortProtocol,
     #[serde(default)]
     pub routing: PortRouting,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct EnvVar {
-    pub name: String,
-    pub value: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RegistryAuth {
-    pub server: String,
-    pub username: String,
-    pub password: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct VolumeMount {
-    pub uid: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>,
-    pub mount_path: String,
-    #[serde(default)]
-    pub read_only: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub last_backup_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

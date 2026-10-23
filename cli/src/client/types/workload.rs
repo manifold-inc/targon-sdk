@@ -1,29 +1,54 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use super::common::{EnvVar, Port, RegistryAuth, State, VolumeMount};
+use super::common::{Port, State};
 use crate::client::pagination::Page;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum WorkloadType {
     #[default]
-    Rental,
     Vm,
+    Bm,
 }
 
 impl WorkloadType {
     pub fn as_str(self) -> &'static str {
         match self {
-            WorkloadType::Rental => "RENTAL",
             WorkloadType::Vm => "VM",
+            WorkloadType::Bm => "BM",
         }
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct VmConfig {
-    pub password: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hostname: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct BmConfigInput {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hostname: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BmConfig {
+    #[serde(default)]
+    pub region: String,
+    #[serde(default)]
+    pub hostname: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BmImage {
+    pub name: String,
+    pub display_name: String,
+    #[serde(default)]
+    pub os_family: String,
+    #[serde(default)]
+    pub description: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -48,12 +73,15 @@ pub struct WorkloadResource {
     pub gpu_type: Option<String>,
     #[serde(default)]
     pub gpu_count: Option<u32>,
-    pub vcpu: u32,
-    pub memory: u64,
     #[serde(default)]
     pub disk_size_mib: Option<u64>,
     #[serde(default)]
     pub network_mode: Option<String>,
+
+    #[serde(default)]
+    pub vcpu: u32,
+    #[serde(default)]
+    pub memory: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -94,21 +122,17 @@ pub struct Workload {
     #[serde(default)]
     pub ports: Vec<Port>,
     #[serde(default)]
-    pub envs: Vec<EnvVar>,
-    #[serde(default)]
-    pub commands: Vec<String>,
-    #[serde(default)]
-    pub args: Vec<String>,
-    #[serde(default)]
-    pub volumes: Vec<VolumeMount>,
-    #[serde(default)]
     pub ssh_keys: Vec<WorkloadSshKey>,
-    #[serde(default)]
-    pub registry_auth: Option<RegistryAuth>,
     #[serde(default)]
     pub state: Option<WorkloadState>,
     #[serde(default)]
     pub resource: Option<WorkloadResource>,
+    #[serde(default)]
+    pub vm_config: Option<VmConfig>,
+    #[serde(default)]
+    pub bm_config: Option<BmConfig>,
+    #[serde(default)]
+    pub reservation_uid: Option<String>,
     #[serde(default)]
     pub cost_per_hour: Option<f64>,
     #[serde(default)]
@@ -130,11 +154,11 @@ pub struct WorkloadOperationResponse {
     #[serde(default)]
     pub resource: Option<WorkloadResource>,
     #[serde(default)]
+    pub reservation_uid: Option<String>,
+    #[serde(default)]
     pub cost_per_hour: Option<f64>,
     #[serde(default)]
     pub revision: Option<String>,
-    #[serde(default)]
-    pub volumes: Vec<VolumeMount>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -199,19 +223,15 @@ pub struct CreateWorkloadRequest {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub ports: Vec<Port>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub envs: Vec<EnvVar>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub commands: Vec<String>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub args: Vec<String>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub volumes: Vec<VolumeMount>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub ssh_keys: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub registry_auth: Option<RegistryAuth>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub vm_config: Option<VmConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub region: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reservation_uid: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bm_config: Option<BmConfigInput>,
 }
 
 impl CreateWorkloadRequest {
@@ -228,15 +248,22 @@ impl CreateWorkloadRequest {
             workload_type,
             project_id: None,
             ports: Vec::new(),
-            envs: Vec::new(),
-            commands: Vec::new(),
-            args: Vec::new(),
-            volumes: Vec::new(),
             ssh_keys: Vec::new(),
-            registry_auth: None,
             vm_config: None,
+            region: None,
+            reservation_uid: None,
+            bm_config: None,
         }
     }
+}
+
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct ReinstallWorkloadRequest {
+    pub image: String,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub ssh_keys: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hostname: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize)]
@@ -250,17 +277,7 @@ pub struct UpdateWorkloadRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ports: Option<Vec<Port>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub envs: Option<Vec<EnvVar>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub commands: Option<Vec<String>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub args: Option<Vec<String>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub volumes: Option<Vec<VolumeMount>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub ssh_keys: Option<Vec<String>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub registry_auth: Option<RegistryAuth>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -289,25 +306,4 @@ pub struct VerifyWorkloadRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VerifyWorkloadResponse {
     pub verified: bool,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct AttachVolumeRequest {
-    pub mount_path: String,
-    #[serde(default)]
-    pub read_only: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WorkloadVolume {
-    pub workload_uid: String,
-    pub uid: String,
-    pub mount_path: String,
-    pub read_only: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WorkloadSshKeyAttachment {
-    pub workload_uid: String,
-    pub ssh_key_uid: String,
 }

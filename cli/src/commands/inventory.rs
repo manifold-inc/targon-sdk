@@ -10,10 +10,11 @@ use crate::error::{CliError, Result};
 use crate::output::{format, palettes, style};
 
 /// Types fetched for the default mixed inventory view.
-const ALL_TYPES: &[&str] = &["rental", "vm", "storage"];
+const ALL_TYPES: &[&str] = &["vm", "bm"];
 
 const COL_SKU: usize = 17;
 const COL_TYPE: usize = 8;
+const COL_REGION: usize = 8;
 const COL_GPU: usize = 4;
 const COL_VCPU: usize = 7;
 const COL_MEMORY: usize = 8;
@@ -22,12 +23,15 @@ const COL_AVAIL: usize = 5;
 
 #[derive(Debug, Args)]
 pub struct InventoryArgs {
-    /// Filter by offering type: rental, vm, storage
+    /// Filter by offering type: vm, bm
     #[arg(long = "type", value_name = "TYPE", global = true)]
     pub resource_type: Option<String>,
     /// Only show GPU resources
     #[arg(long, global = true)]
     pub gpu: bool,
+    /// Filter by region (see `targon region`)
+    #[arg(long, value_name = "UID", global = true)]
+    pub region: Option<String>,
     /// Hide sold-out SKUs
     #[arg(long, global = true)]
     pub available: bool,
@@ -43,8 +47,17 @@ pub enum InventoryCommands {
 
 pub async fn handle(ctx: &Context, args: &InventoryArgs) -> Result<()> {
     match &args.command {
-        None => list(ctx, args.resource_type.clone(), args.gpu, args.available).await,
-        Some(InventoryCommands::Get { sku }) => get(ctx, sku).await,
+        None => {
+            list(
+                ctx,
+                args.resource_type.clone(),
+                args.gpu,
+                args.region.clone(),
+                args.available,
+            )
+            .await
+        }
+        Some(InventoryCommands::Get { sku }) => get(ctx, sku, args.region.clone()).await,
     }
 }
 
@@ -52,9 +65,10 @@ async fn list(
     ctx: &Context,
     resource_type: Option<String>,
     gpu: bool,
+    region: Option<String>,
     available_only: bool,
 ) -> Result<()> {
-    let mut items = fetch_inventory(ctx, resource_type.as_deref(), gpu).await?;
+    let mut items = fetch_inventory(ctx, resource_type.as_deref(), gpu, region.as_deref()).await?;
 
     if available_only {
         items.retain(|i| i.available > 0);
@@ -81,34 +95,24 @@ async fn fetch_inventory(
     ctx: &Context,
     resource_type: Option<&str>,
     gpu: bool,
+    region: Option<&str>,
 ) -> Result<Vec<Inventory>> {
     let gpu = gpu.then_some(true);
     if let Some(resource_type) = resource_type {
-        return ctx
-            .client
-            .inventory()
-            .list(&InventoryFilter {
-                resource_type: Some(resource_type.to_string()),
-                gpu,
-            })
-            .await
-            .map_err(Into::into);
+        return fetch_one(ctx, resource_type, gpu, region).await;
     }
 
     // Default mixed view: fan-out per offering type and merge.
     let mut items = Vec::new();
     let mut seen = std::collections::HashSet::new();
     for ty in ALL_TYPES {
-        let batch = ctx
-            .client
-            .inventory()
-            .list(&InventoryFilter {
-                resource_type: Some((*ty).to_string()),
-                gpu,
-            })
-            .await?;
+        let batch = fetch_one(ctx, ty, gpu, region).await?;
         for item in batch {
-            let key = (item.name.clone(), item.resource_type.to_ascii_lowercase());
+            let key = (
+                item.name.clone(),
+                item.resource_type.to_ascii_lowercase(),
+                item.region_uid().unwrap_or_default().to_string(),
+            );
             if seen.insert(key) {
                 items.push(item);
             }
@@ -117,15 +121,45 @@ async fn fetch_inventory(
     Ok(items)
 }
 
+/// The org-scoped route carries the organization's reservations, so it is
+/// preferred whenever an org is selected; the public route is the fallback.
+async fn fetch_one(
+    ctx: &Context,
+    resource_type: &str,
+    gpu: Option<bool>,
+    region: Option<&str>,
+) -> Result<Vec<Inventory>> {
+    let filter = InventoryFilter {
+        resource_type: Some(resource_type.to_string()),
+        gpu,
+        region: region.map(str::to_string),
+    };
+    match ctx.org.as_deref() {
+        Some(org) => ctx
+            .client
+            .inventory()
+            .list_for_org(org, &filter)
+            .await
+            .map_err(Into::into),
+        None => ctx
+            .client
+            .inventory()
+            .list(&filter)
+            .await
+            .map_err(Into::into),
+    }
+}
+
 fn print_grouped(items: &[Inventory]) {
     let groups = group_by_family(items);
     let width = table_width();
 
     println!();
     println!(
-        "  {} {} {} {} {} {} {}",
+        "  {} {} {} {} {} {} {} {}",
         pad_header("SKU", COL_SKU),
         pad_header("TYPE", COL_TYPE),
+        pad_header("REGION", COL_REGION),
         pad_header("GPU", COL_GPU),
         pad_header("VCPU", COL_VCPU),
         pad_header("MEMORY", COL_MEMORY),
@@ -158,12 +192,12 @@ fn print_grouped(items: &[Inventory]) {
         avail,
         "available now".color(palettes::DIM),
         style::SEP.color(palettes::DIM),
-        "--type rental|vm|storage · --available hides sold-out".color(palettes::DIM),
+        "--type vm|bm · --region · --available hides sold-out".color(palettes::DIM),
     );
 }
 
 fn print_plain(items: &[Inventory]) {
-    println!("SKU\tTYPE\tGPU\tVCPU\tMEMORY\tPRICE\tAVAIL\tFAMILY");
+    println!("SKU\tTYPE\tREGION\tGPU\tVCPU\tMEMORY\tPRICE\tAVAIL\tFAMILY");
     for item in items {
         let ty = format::inventory_type_label(&item.resource_type);
         let (gpu, vcpu, memory) = row_specs(item);
@@ -173,9 +207,10 @@ fn print_plain(items: &[Inventory]) {
             "0".to_string()
         };
         println!(
-            "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+            "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
             item.name,
             ty,
+            region_label(item),
             gpu,
             vcpu,
             memory,
@@ -184,6 +219,10 @@ fn print_plain(items: &[Inventory]) {
             hardware_family(item),
         );
     }
+}
+
+fn region_label(item: &Inventory) -> String {
+    item.region_uid().unwrap_or("–").to_string()
 }
 
 fn print_family_header(family: &str, width: usize) {
@@ -202,6 +241,7 @@ fn print_family_header(family: &str, width: usize) {
 fn print_row(item: &Inventory) {
     let sold_out = item.available <= 0;
     let ty = format::inventory_type_label(&item.resource_type);
+    let region = region_label(item);
     let (gpu, vcpu, memory) = row_specs(item);
     let price = format::cost_per_hour(item.cost_per_hour);
     let avail = if sold_out {
@@ -212,9 +252,10 @@ fn print_row(item: &Inventory) {
 
     if sold_out {
         println!(
-            "  {} {} {} {} {} {} {}",
+            "  {} {} {} {} {} {} {} {}",
             dim_pad(&item.name, COL_SKU),
             dim_pad(&ty, COL_TYPE),
+            dim_pad(&region, COL_REGION),
             dim_pad(&gpu, COL_GPU),
             dim_pad(&vcpu, COL_VCPU),
             dim_pad(&memory, COL_MEMORY),
@@ -242,9 +283,10 @@ fn print_row(item: &Inventory) {
     };
 
     println!(
-        "  {} {} {} {} {} {} {}",
+        "  {} {} {} {} {} {} {} {}",
         format_args!("{:<COL_SKU$}", item.name),
         type_colored,
+        format_args!("{region:<COL_REGION$}"),
         format_args!("{gpu:<COL_GPU$}"),
         format_args!("{vcpu:<COL_VCPU$}"),
         format_args!("{memory:<COL_MEMORY$}"),
@@ -254,20 +296,14 @@ fn print_row(item: &Inventory) {
 }
 
 fn row_specs(item: &Inventory) -> (String, String, String) {
-    let is_storage = matches!(
-        item.resource_type.to_ascii_lowercase().as_str(),
-        "storage" | "volume"
-    );
-    if is_storage {
-        return ("–".into(), "–".into(), "–".into());
-    }
     let gpu = format::gpu_count(item.spec.gpu_count);
-    let vcpu = if item.spec.vcpu == 0 {
+    let cpu = item.spec.cpu();
+    let vcpu = if cpu == 0 {
         "–".into()
     } else {
-        item.spec.vcpu.to_string()
+        cpu.to_string()
     };
-    let memory = format::mib_to_human(item.spec.memory as u64);
+    let memory = format::mib_to_human(item.spec.mem());
     (gpu, vcpu, memory)
 }
 
@@ -291,19 +327,11 @@ fn group_by_family(items: &[Inventory]) -> Vec<(String, Vec<&Inventory>)> {
 }
 
 fn hardware_family(item: &Inventory) -> String {
-    let ty = item.resource_type.to_ascii_lowercase();
-    if matches!(ty.as_str(), "storage" | "volume") {
-        return "STORAGE".to_string();
-    }
-
     if let Some(gpu) = item.spec.gpu_type.as_deref().filter(|g| !g.is_empty()) {
         return normalize_gpu_family(gpu);
     }
 
     let name = item.name.to_ascii_lowercase();
-    if name.contains("storage") {
-        return "STORAGE".to_string();
-    }
     if let Some(family) = family_from_name(&name) {
         return family;
     }
@@ -368,7 +396,6 @@ fn family_sort_key(family: &str) -> (u8, String) {
         "H100" => 40,
         "H200" => 41,
         "B200" => 42,
-        "STORAGE" => 200,
         "OTHER" => 180,
         _ => 100,
     };
@@ -379,6 +406,8 @@ fn table_width() -> usize {
     COL_SKU
         + 1
         + COL_TYPE
+        + 1
+        + COL_REGION
         + 1
         + COL_GPU
         + 1
@@ -409,8 +438,8 @@ fn dim_pad(value: &str, width: usize) -> String {
     }
 }
 
-async fn get(ctx: &Context, sku: &str) -> Result<()> {
-    let items = fetch_inventory(ctx, None, false).await?;
+async fn get(ctx: &Context, sku: &str, region: Option<String>) -> Result<()> {
+    let items = fetch_inventory(ctx, None, false, region.as_deref()).await?;
     let matches: Vec<&Inventory> = items.iter().filter(|i| i.name == sku).collect();
     if matches.is_empty() {
         return Err(CliError::Config(format!("unknown sku '{sku}'")));
@@ -438,13 +467,19 @@ async fn get(ctx: &Context, sku: &str) -> Result<()> {
             ty.color(palettes::workload_type_color(&ty)).to_string(),
         );
         style::field("Family", hardware_family(item));
+        if let Some(region) = &item.region {
+            style::field(
+                "Region",
+                format!("{} ({})", region.display_name, region.uid),
+            );
+        }
         style::field(
             "GPU",
             format::gpu_spec(item.spec.gpu_type.as_deref(), item.spec.gpu_count),
         );
-        style::field("vCPU", item.spec.vcpu.to_string());
-        style::field("Memory", format::mib_to_human(item.spec.memory as u64));
-        style::field("Storage", format::mib_to_human(item.spec.storage as u64));
+        style::field("vCPU", item.spec.cpu().to_string());
+        style::field("Memory", format::mib_to_human(item.spec.mem()));
+        style::field("Storage", format::mib_to_human(item.spec.disk()));
         style::field("Price", format::cost_per_hour(item.cost_per_hour));
         let avail = if item.available > 0 {
             item.available
@@ -455,6 +490,23 @@ async fn get(ctx: &Context, sku: &str) -> Result<()> {
             "–".color(palettes::DIM).to_string()
         };
         style::field("Available", avail);
+        if let Some(reserved) = &item.reserved {
+            style::field("Reserved", reserved.count.to_string());
+            for reservation in &reserved.reservations {
+                let workload = reservation.workload_uid.as_deref().unwrap_or("unassigned");
+                style::field(
+                    "Reservation",
+                    format!(
+                        "{} {} {} {} {}",
+                        reservation.uid.color(palettes::ACCENT),
+                        style::SEP,
+                        reservation.status,
+                        style::SEP,
+                        workload
+                    ),
+                );
+            }
+        }
     }
     Ok(())
 }
