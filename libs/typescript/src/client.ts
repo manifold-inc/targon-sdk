@@ -5,6 +5,7 @@ import { SandboxTemplatesService } from "./templates.js";
 
 export const DEFAULT_BASE_URL = "https://api.targon.com";
 export const API_VERSION = "/tha/v3";
+export const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 
 export interface TargonClientConfig {
   organization: string;
@@ -18,6 +19,7 @@ interface RequestOptions {
   body?: unknown;
   query?: Record<string, string | number | undefined>;
   signal?: AbortSignal;
+  timeoutMs?: number;
   workloadUID?: string;
 }
 
@@ -39,7 +41,10 @@ export class TargonClient {
     if (typeof this.fetchImpl !== "function") {
       throw new Error("A Fetch API implementation is required");
     }
-    this.requestTimeoutMs = config.requestTimeoutMs ?? 30_000;
+    this.requestTimeoutMs = config.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
+    if (!Number.isFinite(this.requestTimeoutMs) || this.requestTimeoutMs <= 0) {
+      throw new RangeError("requestTimeoutMs must be greater than 0");
+    }
     this.sandboxTemplates = new SandboxTemplatesService(this);
     this.sandboxes = new SandboxesService(this, this.sandboxTemplates);
   }
@@ -71,8 +76,10 @@ export class TargonClient {
     options: RequestOptions = {},
   ): Promise<T> {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), this.requestTimeoutMs);
+    const timeoutMs = options.timeoutMs ?? this.requestTimeoutMs;
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
     const abort = () => controller.abort(options.signal?.reason);
+    if (options.signal?.aborted) abort();
     options.signal?.addEventListener("abort", abort, { once: true });
 
     try {

@@ -73,6 +73,28 @@ function mockFetch(...responses: Response[]): MockFetch {
   return fetch;
 }
 
+function delayedFetch(response: Response, delayMs: number): MockFetch {
+  const calls: FetchCall[] = [];
+  const fetch = (async (...args: FetchCall) => {
+    calls.push(args);
+    const signal = args[1]?.signal;
+    return new Promise<Response>((resolve, reject) => {
+      const abort = () => {
+        clearTimeout(timer);
+        reject(signal?.reason);
+      };
+      const timer = setTimeout(() => {
+        signal?.removeEventListener("abort", abort);
+        resolve(response);
+      }, delayMs);
+      if (signal?.aborted) abort();
+      else signal?.addEventListener("abort", abort, { once: true });
+    });
+  }) as MockFetch;
+  fetch.calls = calls;
+  return fetch;
+}
+
 function testClient(
   fetch: typeof globalThis.fetch = mockFetch(),
   config: Partial<ConstructorParameters<typeof TargonClient>[0]> = {},
@@ -91,6 +113,32 @@ function assertSubset(
 }
 
 describe("TargonClient", () => {
+  it("uses operation-specific timeouts for exec and file transfers", async () => {
+    assert.throws(
+      () => testClient(mockFetch(), { requestTimeoutMs: 0 }),
+      /requestTimeoutMs/,
+    );
+    const ordinary = testClient(delayedFetch(json({ items: [], next_cursor: null }), 25), {
+      requestTimeoutMs: 5,
+    });
+    await assert.rejects(ordinary.sandboxes.list(), { name: "AbortError" });
+
+    const exec = testClient(
+      delayedFetch(json({ stdout: "ok", stderr: "", code: 0, timed_out: false }), 25),
+      { requestTimeoutMs: 5 },
+    );
+    assert.equal((await exec.sandboxes.exec("wrk-1", "true", 1)).stdout, "ok");
+
+    const files = testClient(
+      delayedFetch(json({ path: "/tmp/data", content_b64: "b2s=" }), 25),
+      { requestTimeoutMs: 5 },
+    );
+    assert.deepEqual(
+      await files.sandboxes.files.read("wrk-1", "/tmp/data"),
+      new TextEncoder().encode("ok"),
+    );
+  });
+
   it("preserves plain-text upstream error messages", async () => {
     const fetch = mockFetch(
       new Response("sandbox gateway unavailable", {

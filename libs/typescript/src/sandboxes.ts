@@ -56,6 +56,9 @@ interface SandboxOperationResponse {
   type?: "" | "SANDBOX";
 }
 
+const EXEC_TIMEOUT_SLACK_MS = 15_000;
+const FILE_TRANSFER_TIMEOUT_MS = 10 * 60_000;
+
 export class SandboxesService {
   readonly terminals: SandboxTerminalsService;
   readonly files: SandboxFilesService;
@@ -268,6 +271,7 @@ export class SandboxesService {
     assertCommand(cmd, timeoutSec);
     return this.client.request("POST", this.workloadPath(uid, "/exec"), {
       body: { cmd, timeout_sec: timeoutSec },
+      timeoutMs: timeoutSec * 1_000 + EXEC_TIMEOUT_SLACK_MS,
       workloadUID: uid,
     });
   }
@@ -362,7 +366,11 @@ export class SandboxFilesService {
     const file = await this.client.request<FileResponse>(
       "GET",
       this.path(uid),
-      { query: { path }, workloadUID: uid },
+      {
+        query: { path },
+        timeoutMs: FILE_TRANSFER_TIMEOUT_MS,
+        workloadUID: uid,
+      },
     );
     return decodeBase64(file.content_b64);
   }
@@ -372,6 +380,7 @@ export class SandboxFilesService {
     assertFileData(data);
     return this.client.request("PUT", this.path(uid), {
       body: { path, content_b64: encodeBase64(data) },
+      timeoutMs: FILE_TRANSFER_TIMEOUT_MS,
       workloadUID: uid,
     });
   }

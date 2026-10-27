@@ -10,7 +10,9 @@ Component releases use prefixed tags (`cli/vX.Y.Z`, `python/vX.Y.Z`, …).
 ## [Unreleased]
 
 ### Fixed
-- Go request deadlines now come from the call context. Exec and file transfer are no longer cut off by the 30s default client timeout, and sandbox waits share one context clock with their status requests.
+- Go request deadlines now come from the call context, and TypeScript applies
+  operation-specific deadlines. Exec and file transfer are no longer cut off
+  by the 30-second ordinary request timeout.
 - Added first-class Sandbox APIs to the Go, Python, and TypeScript SDKs.
 - Added fetched, client-bound `SandboxTemplate` resources with refresh, update,
   delete, and sandbox-creation methods.

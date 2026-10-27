@@ -46,6 +46,11 @@ The client also supports listing/updating/deleting sandboxes, SSH keys,
 freeze/thaw, fork, publish and template polling, binary files, access tickets,
 terminal CRUD, desktop discovery, and typed API errors.
 
+`requestTimeoutMs` defaults to 30 seconds for ordinary API requests. Exec uses
+its requested `timeoutSec` plus response slack, and file transfers use a
+10-minute deadline, so long-running sandbox operations are not cut off by the
+ordinary client timeout.
+
 Sandbox templates are service-bound resources. Template list/get/update and
 sandbox publish operations return `SandboxTemplate` instances with `refresh()`,
 `update()`, `delete()`, and `createSandbox()` methods:

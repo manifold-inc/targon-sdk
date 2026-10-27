@@ -1,6 +1,7 @@
 export {
   API_VERSION,
   DEFAULT_BASE_URL,
+  DEFAULT_REQUEST_TIMEOUT_MS,
   TargonClient,
   createClient,
   type TargonClientConfig,
