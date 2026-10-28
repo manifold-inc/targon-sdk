@@ -30,7 +30,6 @@ from targon.client.sandbox import (
     TerminalSession,
 )
 from targon.client.token import ApiToken, ServiceToken
-from targon.client.workload import ExecResponse
 from targon.core.exceptions import (
     AccessTicketError,
     GatewayError,
@@ -80,7 +79,6 @@ __all__ = [
     "AccessTicketError",
     "PayloadTooLargeError",
     "GatewayError",
-    "ExecResponse",
     "Org",
     "Member",
     "Wallet",
