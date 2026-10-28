@@ -8,6 +8,7 @@ from targon.client.inventory import InventoryClient
 from targon.client.projects import ProjectClient
 from targon.client.sandbox import SandboxesClient
 from targon.client.ssh_key import SshKeyClient
+from targon.client.vm import VMClient
 from targon.client.workload import WorkloadClient
 from targon.core.auth import get_api_key
 from targon.core.config import Config
@@ -56,6 +57,7 @@ class Client:
         self._ssh_key: Optional[SshKeyClient] = None
         self._project: Optional[ProjectClient] = None
         self._sandboxes: Optional[SandboxesClient] = None
+        self._vms: Optional[VMClient] = None
         self._orgs: Optional[Any] = None
         self._members: Optional[Any] = None
         self._api_tokens: Optional[Any] = None
@@ -125,6 +127,12 @@ class Client:
         if self._sandboxes is None:
             self._sandboxes = SandboxesClient(self)
         return self._sandboxes
+
+    @property
+    def vms(self) -> VMClient:
+        if self._vms is None:
+            self._vms = VMClient(self)
+        return self._vms
 
     @property
     def orgs(self) -> Any:

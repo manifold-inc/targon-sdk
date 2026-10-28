@@ -359,6 +359,18 @@ class WorkloadClient(BaseHTTPClient):
             path = f"{path}/{'/'.join(parts)}"
         return path
 
+    def _request_no_retry(self, method: str, path: str, **kwargs: Any):
+        """Send a non-idempotent workload request without automatic retries."""
+        workload_uid = kwargs.pop("_workload_uid", None)
+        kwargs.setdefault("timeout", self.client.config.timeout)
+        kwargs.setdefault("verify", self.client.config.verify_ssl)
+        response = self.client.sandbox_no_retry_session.request(
+            method,
+            f"{self.base_url}{path}",
+            **kwargs,
+        )
+        return self._handle_response(response, workload_uid=workload_uid)
+
     def get(self, workload_uid: str) -> WorkloadResponse:
         workload_uid = _validate_non_empty(workload_uid, "workload_uid")
         result = self._get(self._path(workload_uid))

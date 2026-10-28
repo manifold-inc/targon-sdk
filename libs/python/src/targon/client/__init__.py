@@ -66,6 +66,7 @@ from targon.client.token import (
     ServiceTokenListResponse,
     TokenCreator,
 )
+from targon.client.vm import VM, VMClient, VMCreateParams, VMUpdateParams
 from targon.client.workload import (
     PortConfig,
     WorkloadClient,
@@ -123,6 +124,11 @@ __all__ = [
     "WorkloadURL",
     "WorkloadEvent",
     "WorkloadEventsResponse",
+    # VM
+    "VM",
+    "VMClient",
+    "VMCreateParams",
+    "VMUpdateParams",
     # ssh key
     "SshKeyClient",
     "SshKey",

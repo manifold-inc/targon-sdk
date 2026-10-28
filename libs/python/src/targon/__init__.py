@@ -30,6 +30,7 @@ from targon.client.sandbox import (
     TerminalSession,
 )
 from targon.client.token import ApiToken, ServiceToken
+from targon.client.vm import VM, VMClient, VMCreateParams, VMUpdateParams
 from targon.core.exceptions import (
     AccessTicketError,
     GatewayError,
@@ -45,6 +46,10 @@ from targon.version import __version__
 
 __all__ = [
     "Client",
+    "VM",
+    "VMClient",
+    "VMCreateParams",
+    "VMUpdateParams",
     "Sandbox",
     "SandboxesClient",
     "SandboxCreateParams",
