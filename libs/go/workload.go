@@ -182,6 +182,10 @@ func (s *WorkloadService) path(parts ...string) (string, error) {
 }
 
 func (s *WorkloadService) Get(ctx context.Context, workloadUID string) (*Workload, error) {
+	return s.get(ctx, workloadUID)
+}
+
+func (s *WorkloadService) get(ctx context.Context, workloadUID string) (*Workload, error) {
 	workloadUID, err := requireNonEmpty(workloadUID, "workload_uid")
 	if err != nil {
 		return nil, err

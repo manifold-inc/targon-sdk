@@ -52,6 +52,34 @@ func CreateSandbox(ctx context.Context, params SandboxCreateParams) (*Sandbox, e
 }
 
 func (s *SandboxesService) Create(ctx context.Context, params SandboxCreateParams) (*Sandbox, error) {
+	payload, err := s.registrationPayload(params)
+	if err != nil {
+		return nil, err
+	}
+	registered, err := registerWorkload(ctx, s.client, s.client.Workloads, payload)
+	if err != nil {
+		return nil, err
+	}
+	workload, err := deployTyped(ctx, s.client, registered.UID, "SANDBOX", params.Wait)
+	if err != nil {
+		return nil, err
+	}
+	return hydrateSandbox(s, workload), nil
+}
+
+func (s *SandboxesService) Register(ctx context.Context, params SandboxCreateParams) (*Sandbox, error) {
+	payload, err := s.registrationPayload(params)
+	if err != nil {
+		return nil, err
+	}
+	workload, err := registerTyped(ctx, s.client, payload, "SANDBOX")
+	if err != nil {
+		return nil, err
+	}
+	return hydrateSandbox(s, workload), nil
+}
+
+func (s *SandboxesService) registrationPayload(params SandboxCreateParams) (map[string]any, error) {
 	if err := validateSandboxName(params.Name, "name"); err != nil {
 		return nil, err
 	}
@@ -95,23 +123,15 @@ func (s *SandboxesService) Create(ctx context.Context, params SandboxCreateParam
 	if params.SandboxConfig != nil {
 		payload["sandbox_config"] = params.SandboxConfig
 	}
-	path, err := s.path()
+	return payload, nil
+}
+
+func (s *SandboxesService) Deploy(ctx context.Context, workloadUID string, wait WaitOptions) (*Sandbox, error) {
+	workload, err := deployTyped(ctx, s.client, workloadUID, "SANDBOX", wait)
 	if err != nil {
 		return nil, err
 	}
-	var created Workload
-	if err := s.client.doNoRetry(ctx, http.MethodPost, path, nil, payload, &created); err != nil {
-		return nil, err
-	}
-	deployPath, _ := s.path(created.UID, "deploy")
-	var deployed WorkloadOperationResponse
-	if err := s.client.doNoRetry(ctx, http.MethodPost, deployPath, nil, nil, &deployed); err != nil {
-		return nil, err
-	}
-	if params.Wait.NoWait {
-		return s.Get(ctx, created.UID)
-	}
-	return s.WaitForStatus(ctx, created.UID, "running", params.Wait)
+	return hydrateSandbox(s, workload), nil
 }
 
 func (s *SandboxesService) Get(ctx context.Context, workloadUID string) (*Sandbox, error) {
@@ -422,44 +442,11 @@ func (s *SandboxesService) GetDesktop(ctx context.Context, workloadUID string) (
 }
 
 func (s *SandboxesService) WaitForStatus(ctx context.Context, workloadUID, target string, options WaitOptions) (*Sandbox, error) {
-	workloadUID, err := requireNonEmpty(workloadUID, "workload_uid")
+	workload, err := waitTyped(ctx, s.client, workloadUID, "SANDBOX", target, options)
 	if err != nil {
 		return nil, err
 	}
-	target, err = requireNonEmpty(target, "status")
-	if err != nil {
-		return nil, err
-	}
-	timeout, interval := waitDurations(options)
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-	lastStatus := ""
-	return pollUntil(ctx, interval, func() (*Sandbox, bool, error) {
-		state, err := s.GetState(ctx, workloadUID)
-		if err != nil {
-			return nil, false, err
-		}
-		lastStatus = state.Status
-		status := strings.ToLower(state.Status)
-		if status == strings.ToLower(target) {
-			sandbox, err := s.Get(ctx, workloadUID)
-			return sandbox, true, err
-		}
-		if status == "error" || status == "deleted" || status == "suspended" {
-			return nil, false, &SandboxStateError{APIError: APIError{
-				StatusCode:  http.StatusConflict,
-				Message:     fmt.Sprintf("sandbox %s entered terminal state %q: %s", workloadUID, state.Status, state.Message),
-				Reason:      "WORKLOAD_SANDBOX_INVALID_STATE",
-				WorkloadUID: workloadUID,
-			}}
-		}
-		return nil, false, nil
-	}, func(*Sandbox) error {
-		return &TimeoutError{
-			Message: fmt.Sprintf("sandbox %s did not reach %q within %.0fs (last status: %q)", workloadUID, target, timeout.Seconds(), lastStatus),
-			Timeout: timeout.Seconds(),
-		}
-	})
+	return hydrateSandbox(s, workload), nil
 }
 
 func requireSandboxWorkload(workload *Workload) error {
