@@ -3,6 +3,7 @@ from typing import Any, Optional
 import requests
 from requests.adapters import HTTPAdapter, Retry
 
+from targon.client.bare_metal import BareMetalClient
 from targon.client.constants import DEFAULT_BASE_URL
 from targon.client.inventory import InventoryClient
 from targon.client.projects import ProjectClient
@@ -58,6 +59,7 @@ class Client:
         self._project: Optional[ProjectClient] = None
         self._sandboxes: Optional[SandboxesClient] = None
         self._vms: Optional[VMClient] = None
+        self._bare_metal: Optional[BareMetalClient] = None
         self._orgs: Optional[Any] = None
         self._members: Optional[Any] = None
         self._api_tokens: Optional[Any] = None
@@ -133,6 +135,12 @@ class Client:
         if self._vms is None:
             self._vms = VMClient(self)
         return self._vms
+
+    @property
+    def bare_metal(self) -> BareMetalClient:
+        if self._bare_metal is None:
+            self._bare_metal = BareMetalClient(self)
+        return self._bare_metal
 
     @property
     def orgs(self) -> Any:

@@ -1,3 +1,9 @@
+from targon.client.bare_metal import (
+    BareMetal,
+    BareMetalClient,
+    BareMetalCreateParams,
+    BareMetalReinstallParams,
+)
 from targon.client.client import Client
 from targon.client.inventory import (
     Inventory,
@@ -129,6 +135,11 @@ __all__ = [
     "VMClient",
     "VMCreateParams",
     "VMUpdateParams",
+    # Bare Metal
+    "BareMetal",
+    "BareMetalClient",
+    "BareMetalCreateParams",
+    "BareMetalReinstallParams",
     # ssh key
     "SshKeyClient",
     "SshKey",
