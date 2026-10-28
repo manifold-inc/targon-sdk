@@ -114,6 +114,42 @@ func TestWorkloadWaitUntilReadyTerminalAndTimeout(t *testing.T) {
 	}
 }
 
+func TestWaitTreatsStoppedAndFrozenAsTerminal(t *testing.T) {
+	for _, status := range []string{"stopped", "frozen", "Frozen"} {
+		var calls atomic.Int32
+		c := testClient(t, func(w http.ResponseWriter, _ *http.Request) {
+			calls.Add(1)
+			_ = json.NewEncoder(w).Encode(WorkloadStateResponse{UID: "wrk-1", WorkloadType: "VM", Status: status})
+		})
+		options := WaitOptions{Timeout: time.Second, PollInterval: time.Millisecond}
+		_, err := c.Workloads.WaitUntilReady(context.Background(), "wrk-1", options)
+		var apiErr *APIError
+		if !errors.As(err, &apiErr) || apiErr.Reason != "WORKLOAD_INVALID_STATE" || calls.Load() != 1 {
+			t.Fatalf("WaitUntilReady status=%s err=%v calls=%d", status, err, calls.Load())
+		}
+		_, err = waitTyped(context.Background(), c, "wrk-1", "VM", "running", options)
+		if !errors.As(err, &apiErr) || apiErr.Reason != "WORKLOAD_INVALID_STATE" {
+			t.Fatalf("waitTyped status=%s err=%v", status, err)
+		}
+	}
+}
+
+func TestWaitTypedChecksTargetBeforeTerminalStates(t *testing.T) {
+	c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/state") {
+			_ = json.NewEncoder(w).Encode(WorkloadStateResponse{UID: "wrk-1", WorkloadType: "VM", Status: "frozen"})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(Workload{UID: "wrk-1", Type: "VM"})
+	})
+	got, err := waitTyped(context.Background(), c, "wrk-1", "VM", "frozen", WaitOptions{
+		Timeout: time.Second, PollInterval: time.Millisecond,
+	})
+	if err != nil || got.UID != "wrk-1" {
+		t.Fatalf("workload=%+v err=%v", got, err)
+	}
+}
+
 func TestWorkloadListDecodesBackendOperationShape(t *testing.T) {
 	c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/tha/v3/orgs/acme/workloads" {

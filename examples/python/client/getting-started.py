@@ -25,7 +25,9 @@ def pick_bare_metal_capacity(client: targon.Client):
 
 
 def main() -> None:
-    ssh_key = os.environ["TARGON_SSH_KEY_UID"]
+    ssh_key = os.environ.get("TARGON_SSH_KEY_UID", "").strip()
+    if not ssh_key:
+        raise SystemExit("set TARGON_SSH_KEY_UID to an SSH key UID")
     client = targon.Client.from_env(org=os.environ["TARGON_ORG"])
 
     with client:

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	targon "github.com/manifold-inc/targon-sdk/libs/go/v4"
@@ -16,6 +17,10 @@ import (
 // Images default to the first entry from the image catalog. The Bare Metal
 // region and resource default to the first available bm inventory entry.
 func main() {
+	sshKey := strings.TrimSpace(os.Getenv("TARGON_SSH_KEY_UID"))
+	if sshKey == "" {
+		log.Fatal("set TARGON_SSH_KEY_UID to an SSH key UID")
+	}
 	client, err := targon.New(targon.Config{
 		APIKey: os.Getenv("TARGON_API_KEY"),
 		Org:    os.Getenv("TARGON_ORG"),
@@ -26,15 +31,15 @@ func main() {
 	defer client.Close()
 
 	ctx := context.Background()
-	if err := runVM(ctx, client); err != nil {
+	if err := runVM(ctx, client, sshKey); err != nil {
 		log.Fatal(err)
 	}
-	if err := runBareMetal(ctx, client); err != nil {
+	if err := runBareMetal(ctx, client, sshKey); err != nil {
 		log.Fatal(err)
 	}
 }
 
-func runVM(ctx context.Context, client *targon.Client) error {
+func runVM(ctx context.Context, client *targon.Client, sshKey string) error {
 	image := os.Getenv("TARGON_VM_IMAGE")
 	if image == "" {
 		images, err := client.VMs.Images(ctx)
@@ -54,7 +59,7 @@ func runVM(ctx context.Context, client *targon.Client) error {
 		Image:        image,
 		ResourceName: targon.H100Small,
 		VMConfig:     &targon.VMConfigInput{Hostname: "example-vm"},
-		SSHKeys:      []string{os.Getenv("TARGON_SSH_KEY_UID")},
+		SSHKeys:      []string{sshKey},
 		Ports:        []targon.PortConfig{{Port: 8080, Protocol: "TCP"}},
 		Wait:         targon.WaitOptions{Timeout: 10 * time.Minute},
 	})
@@ -66,7 +71,7 @@ func runVM(ctx context.Context, client *targon.Client) error {
 	return nil
 }
 
-func runBareMetal(ctx context.Context, client *targon.Client) error {
+func runBareMetal(ctx context.Context, client *targon.Client, sshKey string) error {
 	region := os.Getenv("TARGON_REGION")
 	resource := os.Getenv("TARGON_BM_RESOURCE")
 	if resource == "" {
@@ -107,7 +112,7 @@ func runBareMetal(ctx context.Context, client *targon.Client) error {
 		ResourceName: resource,
 		Region:       region,
 		BMConfig:     &targon.BMConfigInput{Hostname: "example-bare-metal"},
-		SSHKeys:      []string{os.Getenv("TARGON_SSH_KEY_UID")},
+		SSHKeys:      []string{sshKey},
 	})
 	if err != nil {
 		return err

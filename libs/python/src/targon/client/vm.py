@@ -18,6 +18,7 @@ from targon.client.workload import (
     WorkloadResponse,
     _optional_hostname,
     _optional_str,
+    _ssh_keys_payload,
     _validate_non_empty,
     _WorkloadFields,
 )
@@ -27,12 +28,14 @@ if TYPE_CHECKING:
     from targon.client.client import Client
 
 VALID_LOG_TYPES = frozenset({"serial", "qemu"})
+VM_PORT_PROTOCOLS = frozenset({"TCP", "UDP"})
 
 VMImage = WorkloadImage
 
 
 def _ports_payload(ports: Sequence[PortConfig]) -> list:
     payload = []
+    seen = set()
     for port in ports:
         if not isinstance(port, PortConfig):
             raise ValidationError(
@@ -40,7 +43,11 @@ def _ports_payload(ports: Sequence[PortConfig]) -> list:
                 field="ports",
                 value=port,
             )
-        if not isinstance(port.port, int) or not 1 <= port.port <= 65535:
+        if (
+            isinstance(port.port, bool)
+            or not isinstance(port.port, int)
+            or not 1 <= port.port <= 65535
+        ):
             raise ValidationError(
                 "VM port must be between 1 and 65535",
                 field="ports",
@@ -52,11 +59,29 @@ def _ports_payload(ports: Sequence[PortConfig]) -> list:
                 field="ports",
                 value=port.port,
             )
+        if port.protocol is not None and not isinstance(port.protocol, str):
+            raise ValidationError(
+                "VM port protocol must be a string",
+                field="ports",
+                value=port.protocol,
+            )
+        protocol = (port.protocol or "").strip().upper() or "TCP"
+        if protocol not in VM_PORT_PROTOCOLS:
+            raise ValidationError(
+                "VM ports only support TCP or UDP",
+                field="ports",
+                value=port.protocol,
+            )
+        key = (port.port, protocol)
+        if key in seen:
+            raise ValidationError(
+                "Duplicate VM port and protocol combination",
+                field="ports",
+                value=port.port,
+            )
+        seen.add(key)
         # VM ports are direct forwards; the backend discards routing.
-        item: Dict[str, Any] = {"port": port.port}
-        if port.protocol:
-            item["protocol"] = port.protocol
-        payload.append(item)
+        payload.append({"port": port.port, "protocol": protocol})
     return payload
 
 
@@ -219,8 +244,9 @@ class VMClient:
         reservation_uid = _optional_str(params.reservation_uid, "reservation_uid")
         if reservation_uid is not None:
             payload["reservation_uid"] = reservation_uid
-        if params.ssh_keys:
-            payload["ssh_keys"] = list(params.ssh_keys)
+        ssh_keys = _ssh_keys_payload(params.ssh_keys)
+        if ssh_keys:
+            payload["ssh_keys"] = ssh_keys
         if params.ports:
             payload["ports"] = _ports_payload(params.ports)
         return payload

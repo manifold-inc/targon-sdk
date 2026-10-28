@@ -74,24 +74,48 @@ func (s *VMService) registrationPayload(params VMCreateParams) (map[string]any, 
 		payload["ssh_keys"] = params.SSHKeys
 	}
 	if len(params.Ports) > 0 {
-		if err := validateVMPorts(params.Ports); err != nil {
+		ports, err := normalizeVMPorts(params.Ports)
+		if err != nil {
 			return nil, err
 		}
-		payload["ports"] = params.Ports
+		payload["ports"] = ports
 	}
 	return payload, nil
 }
 
-func validateVMPorts(ports []PortConfig) error {
+// normalizeVMPorts mirrors the backend VM port rules: ports are 1-65535 except
+// 22, protocols are TCP or UDP (default TCP), and each port/protocol pair may
+// appear once. VM ports are direct forwards, so routing is not sent.
+func normalizeVMPorts(ports []PortConfig) ([]PortConfig, error) {
+	type key struct {
+		port     int
+		protocol string
+	}
+	seen := make(map[key]struct{}, len(ports))
+	out := make([]PortConfig, 0, len(ports))
 	for _, port := range ports {
 		if port.Port < 1 || port.Port > 65535 {
-			return validation("VM port must be between 1 and 65535", "ports", port.Port)
+			return nil, validation("VM port must be between 1 and 65535", "ports", port.Port)
 		}
 		if port.Port == 22 {
-			return validation("VM port 22 is reserved for SSH and cannot be forwarded", "ports", port.Port)
+			return nil, validation("VM port 22 is reserved for SSH and cannot be forwarded", "ports", port.Port)
 		}
+		protocol := strings.ToUpper(strings.TrimSpace(port.Protocol))
+		switch protocol {
+		case "":
+			protocol = "TCP"
+		case "TCP", "UDP":
+		default:
+			return nil, validation("VM ports only support TCP or UDP", "ports", port.Protocol)
+		}
+		k := key{port: port.Port, protocol: protocol}
+		if _, dup := seen[k]; dup {
+			return nil, validation("Duplicate VM port and protocol combination", "ports", port.Port)
+		}
+		seen[k] = struct{}{}
+		out = append(out, PortConfig{Port: port.Port, Protocol: protocol})
 	}
-	return nil
+	return out, nil
 }
 
 func (s *VMService) Register(ctx context.Context, params VMCreateParams) (*VM, error) {
@@ -148,10 +172,11 @@ func (s *VMService) Update(ctx context.Context, workloadUID string, params VMUpd
 		payload["name"] = name
 	}
 	if params.Ports != nil {
-		if err := validateVMPorts(*params.Ports); err != nil {
+		ports, err := normalizeVMPorts(*params.Ports)
+		if err != nil {
 			return nil, err
 		}
-		payload["ports"] = *params.Ports
+		payload["ports"] = ports
 	}
 	if len(payload) == 0 {
 		return nil, validation("at least one VM field must be supplied", "update", nil)

@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 import time
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence
 
 from targon.client.constants import org_path
 from targon.core.exceptions import (
@@ -14,7 +14,9 @@ from targon.core.exceptions import (
 )
 from targon.core.objects import BaseHTTPClient
 
-TERMINAL_WORKLOAD_STATES = frozenset({"error", "suspended", "deleted"})
+TERMINAL_WORKLOAD_STATES = frozenset(
+    {"error", "suspended", "deleted", "stopped", "frozen"}
+)
 
 _HOSTNAME_RE = re.compile(
     r"^[a-z0-9]([a-z0-9\-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9\-]{0,61}[a-z0-9])?)*$"
@@ -29,6 +31,28 @@ def _validate_non_empty(value: Optional[str], field_name: str) -> str:
             value=value,
         )
     return value.strip()
+
+
+def _ssh_keys_payload(value: Any) -> List[str]:
+    """Validate an SSH key UID collection, rejecting bare str/bytes."""
+    if value is None:
+        return []
+    if isinstance(value, (str, bytes, bytearray)) or not isinstance(value, Sequence):
+        raise ValidationError(
+            "ssh_keys must be a sequence of SSH key UID strings",
+            field="ssh_keys",
+            value=value,
+        )
+    keys = []
+    for key in value:
+        if not isinstance(key, str) or not key.strip():
+            raise ValidationError(
+                "ssh_keys must contain non-empty strings",
+                field="ssh_keys",
+                value=key,
+            )
+        keys.append(key.strip())
+    return keys
 
 
 def _optional_str(value: Optional[str], field_name: str) -> Optional[str]:

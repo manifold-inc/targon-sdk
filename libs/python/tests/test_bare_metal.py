@@ -99,6 +99,10 @@ def test_register_uses_exact_payload_and_hydrates(client):
         ({"resource_name": ""}, "resource_name"),
         ({"region": ""}, "region"),
         ({"ssh_keys": ()}, "ssh_keys"),
+        ({"ssh_keys": "ssh-1"}, "ssh_keys"),
+        ({"ssh_keys": b"ssh-1"}, "ssh_keys"),
+        ({"ssh_keys": ("ssh-1", " ")}, "ssh_keys"),
+        ({"ssh_keys": (1,)}, "ssh_keys"),
         ({"bm_config": targon.BMConfigInput(hostname="-metal")}, "bm_config.hostname"),
         ({"bm_config": {"hostname": "metal"}}, "bm_config"),
     ),
@@ -348,6 +352,10 @@ def test_reinstall_requires_typed_request(client, request_value, field):
         (
             lambda: targon.BareMetalReinstallParams(image="ubuntu", hostname="bad_x"),
             "hostname",
+        ),
+        (
+            lambda: targon.BareMetalReinstallParams(image="ubuntu", ssh_keys="ssh-1"),
+            "ssh_keys",
         ),
     ),
 )

@@ -139,6 +139,8 @@ func TestVMRegistrationValidationAndNoPassword(t *testing.T) {
 		{"long hostname", VMCreateParams{VMConfig: &VMConfigInput{Hostname: strings.Repeat("a", 64)}}, "vm_config.hostname"},
 		{"ssh port", VMCreateParams{Ports: []PortConfig{{Port: 22, Protocol: "TCP"}}}, "ports"},
 		{"port range", VMCreateParams{Ports: []PortConfig{{Port: 70000}}}, "ports"},
+		{"sctp", VMCreateParams{Ports: []PortConfig{{Port: 8080, Protocol: "SCTP"}}}, "ports"},
+		{"duplicate", VMCreateParams{Ports: []PortConfig{{Port: 8080}, {Port: 8080, Protocol: "tcp"}}}, "ports"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			params := tt.params
@@ -164,6 +166,51 @@ func TestVMRegistrationValidationAndNoPassword(t *testing.T) {
 	}
 	if fields := reflect.TypeOf(VMConfigInput{}).NumField(); fields != 1 {
 		t.Errorf("VMConfigInput fields=%d, want only Hostname", fields)
+	}
+}
+
+func TestVMPortsNormalizeAndAllowSamePortOnTCPAndUDP(t *testing.T) {
+	var got map[string]any
+	c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+				t.Fatal(err)
+			}
+			_ = json.NewEncoder(w).Encode(Workload{UID: "wrk-vm", Type: "VM"})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(Workload{UID: "wrk-vm", Type: "VM"})
+	})
+	_, err := c.VMs.Register(context.Background(), VMCreateParams{
+		Name: "vm", Image: "ubuntu-24.04", ResourceName: H100Small,
+		Ports: []PortConfig{
+			{Port: 8080, Protocol: "udp", Routing: "DIRECT"},
+			{Port: 8080},
+			{Port: 9090, Protocol: " TCP "},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []any{
+		map[string]any{"port": float64(8080), "protocol": "UDP"},
+		map[string]any{"port": float64(8080), "protocol": "TCP"},
+		map[string]any{"port": float64(9090), "protocol": "TCP"},
+	}
+	if !reflect.DeepEqual(got["ports"], want) {
+		t.Fatalf("ports=%#v, want %#v", got["ports"], want)
+	}
+
+	for name, ports := range map[string][]PortConfig{
+		"sctp":      {{Port: 8080, Protocol: "SCTP"}},
+		"duplicate": {{Port: 8080, Protocol: "TCP"}, {Port: 8080}},
+	} {
+		ports := ports
+		_, err := c.VMs.Update(context.Background(), "wrk-vm", VMUpdateParams{Ports: &ports})
+		var validationErr *ValidationError
+		if !errors.As(err, &validationErr) || validationErr.Field != "ports" {
+			t.Fatalf("%s update error=%T %v", name, err, err)
+		}
 	}
 }
 

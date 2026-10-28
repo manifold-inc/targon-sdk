@@ -16,6 +16,7 @@ from targon.client.workload import (
     WorkloadResponse,
     _optional_hostname,
     _optional_str,
+    _ssh_keys_payload,
     _validate_non_empty,
     _WorkloadFields,
 )
@@ -123,13 +124,14 @@ class BareMetalClient:
             ),
             "region": _validate_non_empty(params.region, "region"),
         }
-        if not params.ssh_keys:
+        ssh_keys = _ssh_keys_payload(params.ssh_keys)
+        if not ssh_keys:
             raise ValidationError(
                 "at least one SSH key is required",
                 field="ssh_keys",
                 value=params.ssh_keys,
             )
-        payload["ssh_keys"] = list(params.ssh_keys)
+        payload["ssh_keys"] = ssh_keys
         if params.bm_config is not None:
             if not isinstance(params.bm_config, BMConfigInput):
                 raise ValidationError(
@@ -237,8 +239,9 @@ class BareMetalClient:
         payload: Dict[str, Any] = {
             "image": _validate_non_empty(request.image, "image"),
         }
-        if request.ssh_keys:
-            payload["ssh_keys"] = list(request.ssh_keys)
+        ssh_keys = _ssh_keys_payload(request.ssh_keys)
+        if ssh_keys:
+            payload["ssh_keys"] = ssh_keys
         hostname = _optional_hostname(request.hostname, "hostname")
         if hostname is not None:
             payload["hostname"] = hostname

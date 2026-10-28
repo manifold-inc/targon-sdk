@@ -95,15 +95,24 @@ vm = acme.vms.create(
         resource_name=Resources.H100_SMALL,
         vm_config=VMConfigInput(hostname="my-vm"),
         ssh_keys=("ssh-key-uid",),
-        # Port 22 is reserved for SSH and cannot be forwarded.
+        # Ports are TCP/UDP only, unique per port/protocol, and 22 is reserved for SSH.
         ports=(PortConfig(port=8080, protocol="TCP"),),
     )
 )
 
-# Bare Metal capacity is regional; pick a resource and region from inventory.
-capacity = acme.inventory.list(
-    inventory_type="bm", region=os.environ.get("TARGON_REGION")
-)[0]
+# Bare Metal capacity is regional; pick an available resource and region.
+capacity = next(
+    (
+        item
+        for item in acme.inventory.list(
+            inventory_type="bm", region=os.environ.get("TARGON_REGION")
+        )
+        if item.available > 0 and item.region is not None
+    ),
+    None,
+)
+if capacity is None:
+    raise SystemExit("no Bare Metal inventory available")
 
 metal = acme.bare_metal.create(
     BareMetalCreateParams(

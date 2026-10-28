@@ -109,6 +109,16 @@ def test_vm_params_have_no_password():
         ({"vm_config": {"hostname": "vm"}}, "vm_config"),
         ({"ports": (PortConfig(22),)}, "ports"),
         ({"ports": (PortConfig(70000),)}, "ports"),
+        ({"ports": (PortConfig(8080, protocol="SCTP"),)}, "ports"),
+        ({"ports": (PortConfig(8080, protocol=6),)}, "ports"),
+        (
+            {"ports": (PortConfig(8080), PortConfig(8080, protocol="tcp"))},
+            "ports",
+        ),
+        ({"ssh_keys": "ssh-key-uid"}, "ssh_keys"),
+        ({"ssh_keys": b"ssh-key-uid"}, "ssh_keys"),
+        ({"ssh_keys": ("ssh-key-uid", "")}, "ssh_keys"),
+        ({"ssh_keys": (42,)}, "ssh_keys"),
         ({"project_id": 42}, "project_id"),
     ),
 )
@@ -122,6 +132,62 @@ def test_register_validates_before_request(client, overrides, field):
 
     assert exc.value.field == field
     client.sandbox_no_retry_session.request.assert_not_called()
+
+
+def test_ports_allow_same_port_on_tcp_and_udp_and_normalize_protocol(client):
+    client.sandbox_no_retry_session.request.return_value = Response(
+        body={"uid": "wrk-vm"}
+    )
+    client.session.request.return_value = Response(
+        body={"uid": "wrk-vm", "type": "VM", "name": "vm"}
+    )
+
+    client.vms.register(
+        targon.VMCreateParams(
+            "vm",
+            "ubuntu-24.04",
+            targon.Resources.H100_SMALL,
+            ports=(
+                PortConfig(8080, protocol="udp", routing="DIRECT"),
+                PortConfig(8080, protocol=""),
+                PortConfig(9090, protocol=" TCP "),
+            ),
+        )
+    )
+
+    payload = client.sandbox_no_retry_session.request.call_args.kwargs["json"]
+    assert payload["ports"] == [
+        {"port": 8080, "protocol": "UDP"},
+        {"port": 8080, "protocol": "TCP"},
+        {"port": 9090, "protocol": "TCP"},
+    ]
+
+
+def test_update_rejects_invalid_ports(client):
+    for ports in (
+        (PortConfig(8080, protocol="SCTP"),),
+        (PortConfig(8080), PortConfig(8080, protocol="TCP")),
+    ):
+        with pytest.raises(ValidationError) as exc:
+            client.vms.update("wrk-vm", targon.VMUpdateParams(ports=ports))
+        assert exc.value.field == "ports"
+    client.sandbox_no_retry_session.request.assert_not_called()
+
+
+@pytest.mark.parametrize("status", ("stopped", "frozen"))
+def test_deploy_treats_stopped_and_frozen_as_terminal(client, status):
+    client.sandbox_no_retry_session.request.return_value = Response(
+        body={"uid": "wrk-vm"}
+    )
+    client.session.request.return_value = Response(
+        body={"uid": "wrk-vm", "workload_type": "VM", "status": status}
+    )
+
+    with pytest.raises(TargonAPIError) as exc:
+        client.vms.deploy("wrk-vm", timeout=1, poll_interval=0)
+
+    assert exc.value.reason == "WORKLOAD_INVALID_STATE"
+    assert status in str(exc.value)
 
 
 def test_update_rejects_ssh_port(client):

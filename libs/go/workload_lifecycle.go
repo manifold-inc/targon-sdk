@@ -8,7 +8,9 @@ import (
 )
 
 // terminalWorkloadStates are backend statuses that never transition to running.
-var terminalWorkloadStates = map[string]struct{}{"error": {}, "deleted": {}, "suspended": {}}
+var terminalWorkloadStates = map[string]struct{}{
+	"error": {}, "deleted": {}, "suspended": {}, "stopped": {}, "frozen": {},
+}
 
 type typedWorkloadService interface {
 	path(parts ...string) (string, error)

@@ -114,20 +114,33 @@ vm, err := client.VMs.Create(ctx, targon.VMCreateParams{
 	ResourceName: targon.H100Small,
 	VMConfig:     &targon.VMConfigInput{Hostname: "my-vm"},
 	SSHKeys:      []string{"ssh-key-uid"},
-	// Port 22 is reserved for SSH and cannot be forwarded.
+	// Ports are TCP/UDP only, unique per port/protocol, and 22 is reserved for SSH.
 	Ports: []targon.PortConfig{{Port: 8080, Protocol: "TCP"}},
 })
 
-// Bare Metal capacity is regional; pick a resource and region from inventory.
+// Bare Metal capacity is regional; pick an available resource and region.
 items, err := client.Inventory.List(ctx, targon.InventoryListParams{
 	Type: "bm", Region: os.Getenv("TARGON_REGION"),
 })
+if err != nil {
+	return err
+}
+var capacity *targon.Inventory
+for i := range items {
+	if items[i].Available > 0 && items[i].Region != nil {
+		capacity = &items[i]
+		break
+	}
+}
+if capacity == nil {
+	return errors.New("no Bare Metal inventory available")
+}
 
 metal, err := client.BareMetal.Create(ctx, targon.BareMetalCreateParams{
 	Name:         "gpu-host",
 	Image:        "ubuntu-24.04", // see client.BareMetal.Images
-	ResourceName: items[0].Name,
-	Region:       items[0].Region.UID,
+	ResourceName: capacity.Name,
+	Region:       capacity.Region.UID,
 	BMConfig:     &targon.BMConfigInput{Hostname: "gpu-host"},
 	SSHKeys:      []string{"ssh-key-uid"},
 })
