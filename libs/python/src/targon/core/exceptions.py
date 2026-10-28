@@ -82,6 +82,100 @@ class APIError(TargonError):
         return self.status_code == 403
 
 
+class TargonAPIError(APIError):
+    """Structured API error preserving the backend reason code."""
+
+    __slots__ = ("workload_uid",)
+
+    def __init__(
+        self,
+        status_code: int,
+        message: str,
+        reason: Optional[str] = None,
+        workload_uid: Optional[str] = None,
+        request_id: Optional[str] = None,
+        cause: Optional[Exception] = None,
+    ) -> None:
+        response = {"reason": reason} if reason else None
+        super().__init__(status_code, message, response, request_id, cause)
+        self.workload_uid = workload_uid
+        if workload_uid:
+            self.details["workload_uid"] = workload_uid
+
+
+class SandboxUnavailableError(TargonAPIError):
+    __slots__ = ()
+
+
+class SandboxStateError(TargonAPIError):
+    __slots__ = ()
+
+
+class SandboxTemplateError(TargonAPIError):
+    __slots__ = ()
+
+
+class TerminalLimitError(TargonAPIError):
+    __slots__ = ()
+
+
+class AccessTicketError(TargonAPIError):
+    __slots__ = ()
+
+
+class PayloadTooLargeError(TargonAPIError):
+    __slots__ = ()
+
+
+class GatewayError(TargonAPIError):
+    __slots__ = ()
+
+
+def api_error(
+    status_code: int,
+    message: str,
+    *,
+    reason: Optional[str] = None,
+    workload_uid: Optional[str] = None,
+    request_id: Optional[str] = None,
+) -> APIError:
+    """Create the most specific public exception for an API error envelope."""
+    code = reason or ""
+    exception_type = TargonAPIError
+    if status_code == 413 or code == "WORKLOAD_SANDBOX_PAYLOAD_TOO_LARGE":
+        exception_type = PayloadTooLargeError
+    elif status_code == 429 or code == "WORKLOAD_SANDBOX_SESSION_LIMIT":
+        exception_type = TerminalLimitError
+    elif code.startswith("WORKLOAD_ACCESS_TICKET_"):
+        exception_type = AccessTicketError
+    elif status_code == 502:
+        exception_type = GatewayError
+    elif status_code == 503 or code in {
+        "WORKLOAD_SANDBOX_UNAVAILABLE",
+        "WORKLOAD_SANDBOX_NO_CAPACITY",
+        "WORKLOAD_SANDBOX_NO_HOST_PORTS",
+    }:
+        exception_type = SandboxUnavailableError
+    elif "TEMPLATE" in code or code.startswith("SANDBOX_TEMPLATE_"):
+        exception_type = SandboxTemplateError
+    elif code in {
+        "WORKLOAD_SANDBOX_INVALID_STATE",
+        "WORKLOAD_SANDBOX_NOT_DEPLOYED",
+        "WORKLOAD_SANDBOX_NOT_RUNNING",
+        "WORKLOAD_SANDBOX_PARENT_NOT_DEPLOYED",
+        "WORKLOAD_SANDBOX_PARENT_INVALID_STATE",
+        "WORKLOAD_SANDBOX_CREATE_CONFLICT",
+    }:
+        exception_type = SandboxStateError
+    return exception_type(
+        status_code,
+        message,
+        reason=reason,
+        workload_uid=workload_uid,
+        request_id=request_id,
+    )
+
+
 class ValidationError(TargonError):
     __slots__ = ("field", "value")
 
@@ -237,6 +331,15 @@ class NetworkError(TargonError):
 __all__ = [
     "TargonError",
     "APIError",
+    "TargonAPIError",
+    "SandboxUnavailableError",
+    "SandboxStateError",
+    "SandboxTemplateError",
+    "TerminalLimitError",
+    "AccessTicketError",
+    "PayloadTooLargeError",
+    "GatewayError",
+    "api_error",
     "ValidationError",
     "HydrationError",
     "ConfigurationError",

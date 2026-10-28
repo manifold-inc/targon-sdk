@@ -1,0 +1,56 @@
+name: Publish TypeScript package
+
+on:
+  push:
+    tags:
+      - "typescript/v*"
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Build & Upload to npm
+    runs-on: ubuntu-latest
+    environment:
+      name: release
+      url: https://www.npmjs.com/package/@targon/sdk
+    defaults:
+      run:
+        working-directory: libs/typescript
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+          cache: npm
+          cache-dependency-path: libs/typescript/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
+      - run: npm run typecheck
+      - name: Verify tag matches package version
+        if: github.ref_type == 'tag'
+        env:
+          TAG_VERSION: ${{ github.ref_name }}
+        run: |
+          tag="${TAG_VERSION#typescript/v}"
+          package_version="$(node -p "require('./package.json').version")"
+          test "$tag" = "$package_version" || {
+            echo "tag $tag does not match package $package_version" >&2
+            exit 1
+          }
+      - name: Inspect package
+        run: npm pack --dry-run
+      - name: Publish package
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          if [[ "$version" == *-* ]]; then
+            dist_tag=next
+          else
+            dist_tag=latest
+          fi
+          npm publish --access public --tag "$dist_tag"
