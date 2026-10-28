@@ -33,12 +33,14 @@ Component releases use prefixed tags (`cli/vX.Y.Z`, `python/vX.Y.Z`, …).
 
 ### Changed
 - Prepared coordinated `4.0.0-rc.1` releases for Go, Python, and TypeScript.
-- Generic workload creation now migrates to typed `VMs.Create`,
-  `BareMetal.Create`, or `Sandboxes.Create` operations. Common workload list,
-  get, state, events, and delete operations remain available.
-- Clarified that organization discovery/management and personal API tokens are
-  user-scoped, while typed workloads, projects, SSH keys, members, service
-  tokens, wallet, and credits are organization-bound.
+- In Go and Python, generic workload creation now migrates to typed
+  `VMs.Create`, `BareMetal.Create`, or `Sandboxes.Create` operations. Common
+  workload list, get, state, events, and delete operations remain available in
+  those SDKs. TypeScript currently exposes Sandbox only.
+- Clarified that organization discovery/management, personal API tokens, and
+  inventory are user-scoped and organization-optional, while typed workloads,
+  projects, SSH keys, members, service tokens, wallet, and credits are
+  organization-bound.
 - Sandbox creation now requires a fetched `READY` `SandboxTemplate` resource;
   raw template UIDs are not accepted by the public create APIs.
 - Sandbox mutations do not retry automatically, preventing duplicate forks,

@@ -49,6 +49,7 @@ User-scoped services do not require an organization:
 
 - `client.orgs` for organization discovery and management
 - `client.api_tokens` for personal API tokens
+- `client.inventory` for available capacity
 
 Typed workloads (`client.vms`, `client.bare_metal`, and `client.sandboxes`),
 projects, SSH keys, members, service tokens, wallet, and credits are
@@ -69,15 +70,16 @@ personal_token = client.api_tokens.create("laptop")
 service_token = acme.service_tokens.create("ci")
 ```
 
-For multi-organization applications, create an org-bound view without
-mutating the original client:
+The `acme` view is organization-bound without mutating the original client.
 
 ## Typed workloads
 
 Use the typed client that matches the compute you are creating:
 
 ```python
-from targon import BareMetalCreateParams, VMCreateParams
+import os
+
+from targon import BareMetalCreateParams, Resources, VMCreateParams
 
 vm = acme.vms.create(
     VMCreateParams(
@@ -92,8 +94,8 @@ metal = acme.bare_metal.create(
     BareMetalCreateParams(
         name="gpu-host",
         image="ubuntu-24.04",
-        resource_name="h100",
-        region="us-central",
+        resource_name=Resources.H100_SMALL,
+        region=os.environ["TARGON_REGION"],
         ssh_keys=("key-uid",),
     )
 )
@@ -193,8 +195,9 @@ form.
   Metal, or Sandbox clients shown above.
 - Common workload list, get, state, events, and delete operations remain on
   `client.workload`.
-- Organization discovery and personal API tokens remain user-scoped. Bind all
-  other services to an organization with `client.for_org(...)`.
+- Organization discovery, personal API tokens, and inventory remain
+  user-scoped and do not require an organization. Bind all other services to
+  an organization with `client.for_org(...)`.
 - Rental and Volume APIs, including volume attachment, were removed without a
   replacement.
 

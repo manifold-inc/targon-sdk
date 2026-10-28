@@ -49,10 +49,13 @@ Package sources:
 - [Python](libs/python)
 - [TypeScript](libs/typescript)
 
-`Create` is the default operation: it registers, deploys, and optionally waits
-for a typed workload. Advanced callers can use the separate `Register` and
-`Deploy` operations. Common workload list, get, state, events, and delete
-operations remain available through the Workloads service.
+In Go and Python, `Create` is the default operation: it registers, deploys,
+and optionally waits for a typed workload. Advanced Go and Python callers can
+use separate `Register` and `Deploy` operations. Common Workloads list, get,
+state, events, and delete operations are also Go/Python APIs.
+
+TypeScript currently exposes Sandbox only. It does not expose VM, Bare Metal,
+the common Workloads service, or separate `Register`/`Deploy` operations.
 
 Migrate generic VM or Bare Metal creation to `VMs.Create` in Go /
 `client.vms.create()` in Python or `BareMetal.Create` in Go /
@@ -60,10 +63,11 @@ Migrate generic VM or Bare Metal creation to `VMs.Create` in Go /
 `Sandboxes.Create`, `client.sandboxes.create()`, or
 `client.sandboxes.create()` in TypeScript.
 
-Organization discovery/management and personal API tokens are user-scoped.
-Typed workloads, projects, SSH keys, members, service tokens, wallet, and
-credits are organization-bound; use `ForOrg` in Go or `for_org` in Python to
-create an organization-bound client view.
+Organization discovery/management, personal API tokens, and inventory are
+user-scoped and organization-optional. Typed workloads, projects, SSH keys,
+members, service tokens, wallet, and credits are organization-bound; use
+`ForOrg` in Go or `for_org` in Python to create an organization-bound client
+view.
 
 Rental and Volume APIs are unavailable in v4 and have no current replacement.
 

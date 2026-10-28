@@ -73,6 +73,7 @@ User-scoped services do not require an organization:
 
 - `Orgs` for organization discovery and management
 - `APITokens` for personal API tokens
+- `Inventory` for available capacity
 
 Typed workloads (`VMs`, `BareMetal`, and `Sandboxes`), projects, SSH keys,
 members, service tokens, wallet, and credits are organization-bound. Use
@@ -106,6 +107,8 @@ fmt.Println("members", len(members.Items), "credits", credits)
 Use the typed service that matches the compute you are creating:
 
 ```go
+region := os.Getenv("TARGON_REGION")
+
 vm, err := client.VMs.Create(ctx, targon.VMCreateParams{
 	Name:         "my-vm",
 	Image:        "ubuntu-24.04",
@@ -116,8 +119,8 @@ vm, err := client.VMs.Create(ctx, targon.VMCreateParams{
 metal, err := client.BareMetal.Create(ctx, targon.BareMetalCreateParams{
 	Name:         "gpu-host",
 	Image:        "ubuntu-24.04",
-	ResourceName: "h100",
-	Region:       "us-central",
+	ResourceName: targon.H100Small,
+	Region:       region,
 	SSHKeys:      []string{"key-uid"},
 })
 ```
