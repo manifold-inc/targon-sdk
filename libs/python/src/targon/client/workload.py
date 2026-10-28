@@ -1,11 +1,24 @@
 from __future__ import annotations
 
+import re
+import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 from targon.client.constants import org_path
-from targon.core.exceptions import HydrationError, ValidationError
+from targon.core.exceptions import (
+    HydrationError,
+    TimeoutError,
+    ValidationError,
+    api_error,
+)
 from targon.core.objects import BaseHTTPClient
+
+TERMINAL_WORKLOAD_STATES = frozenset({"error", "suspended", "deleted"})
+
+_HOSTNAME_RE = re.compile(
+    r"^[a-z0-9]([a-z0-9\-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9\-]{0,61}[a-z0-9])?)*$"
+)
 
 
 def _validate_non_empty(value: Optional[str], field_name: str) -> str:
@@ -16,6 +29,34 @@ def _validate_non_empty(value: Optional[str], field_name: str) -> str:
             value=value,
         )
     return value.strip()
+
+
+def _optional_str(value: Optional[str], field_name: str) -> Optional[str]:
+    """Strip an optional string, returning None when it is unset or blank."""
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ValidationError(
+            f"{field_name} must be a string",
+            field=field_name,
+            value=value,
+        )
+    return value.strip() or None
+
+
+def _optional_hostname(value: Optional[str], field_name: str) -> Optional[str]:
+    hostname = _optional_str(value, field_name)
+    if hostname is None:
+        return None
+    hostname = hostname.lower()
+    if len(hostname) > 63 or not _HOSTNAME_RE.match(hostname):
+        raise ValidationError(
+            f"{field_name} must be a valid RFC 1123 hostname (lowercase "
+            "letters, digits, hyphens, dots; max 63 chars)",
+            field=field_name,
+            value=value,
+        )
+    return hostname
 
 
 def _require_dict(data: Any, *, source: str, object_type: str) -> Dict[str, Any]:
@@ -127,6 +168,107 @@ class WorkloadResource:
         )
 
 
+@dataclass(frozen=True)
+class VMConfigInput:
+    """Optional ``vm_config`` for VM registration.
+
+    ``hostname`` defaults to the workload name on the server.
+    """
+
+    hostname: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class BMConfigInput:
+    """Optional ``bm_config`` for Bare Metal registration.
+
+    ``hostname`` defaults to the workload name on the server.
+    """
+
+    hostname: Optional[str] = None
+
+
+@dataclass
+class VMConfig:
+    hostname: str = ""
+
+    @classmethod
+    def from_dict(cls, data: Any) -> Optional[VMConfig]:
+        if not isinstance(data, dict):
+            return None
+        return cls(hostname=data.get("hostname") or "")
+
+
+@dataclass
+class BMConfig:
+    region: str = ""
+    hostname: str = ""
+
+    @classmethod
+    def from_dict(cls, data: Any) -> Optional[BMConfig]:
+        if not isinstance(data, dict):
+            return None
+        return cls(
+            region=data.get("region") or "",
+            hostname=data.get("hostname") or "",
+        )
+
+
+@dataclass
+class WorkloadCreator:
+    token_type: str = ""
+    token_name: Optional[str] = None
+    email: Optional[str] = None
+    username: Optional[str] = None
+
+    @classmethod
+    def from_dict(cls, data: Any) -> Optional[WorkloadCreator]:
+        if not isinstance(data, dict):
+            return None
+        return cls(
+            token_type=data.get("token_type", ""),
+            token_name=data.get("token_name"),
+            email=data.get("email"),
+            username=data.get("username"),
+        )
+
+
+@dataclass
+class WorkloadImage:
+    """A bootable image from ``vm-images`` or ``bm-images``."""
+
+    name: str
+    display_name: str = ""
+    os_family: str = ""
+    description: str = ""
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> WorkloadImage:
+        data = _require_dict(data, source="workload image", object_type="WorkloadImage")
+        return cls(
+            name=data.get("name", ""),
+            display_name=data.get("display_name", ""),
+            os_family=data.get("os_family", ""),
+            description=data.get("description", ""),
+        )
+
+
+@dataclass
+class SshKeyAttachResponse:
+    workload_uid: str
+    ssh_key_uid: str
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> SshKeyAttachResponse:
+        data = _require_dict(
+            data, source="ssh key attach", object_type="SshKeyAttachResponse"
+        )
+        return cls(
+            workload_uid=data.get("workload_uid", ""),
+            ssh_key_uid=data.get("ssh_key_uid", ""),
+        )
+
+
 @dataclass
 class WorkloadResponse:
     uid: str
@@ -134,11 +276,13 @@ class WorkloadResponse:
     image: str = ""
     type: str = ""
     resource_name: str = ""
-    region: str = ""
-    hostname: str = ""
     project_id: Optional[str] = None
+    reservation_uid: Optional[str] = None
+    created_by: Optional[WorkloadCreator] = None
     ports: List[PortConfig] = field(default_factory=list)
     ssh_keys: List[WorkloadSshKey] = field(default_factory=list)
+    vm_config: Optional[VMConfig] = None
+    bm_config: Optional[BMConfig] = None
     state: Optional[WorkloadState] = None
     resource: Optional[WorkloadResource] = None
     cost_per_hour: Optional[float] = None
@@ -163,9 +307,9 @@ class WorkloadResponse:
             image=data.get("image", ""),
             type=data.get("type", ""),
             resource_name=data.get("resource_name", ""),
-            region=data.get("region", ""),
-            hostname=data.get("hostname", ""),
             project_id=data.get("project_id"),
+            reservation_uid=data.get("reservation_uid"),
+            created_by=WorkloadCreator.from_dict(data.get("created_by")),
             ports=[
                 PortConfig.from_dict(item)
                 for item in data.get("ports") or []
@@ -176,6 +320,8 @@ class WorkloadResponse:
                 for item in data.get("ssh_keys") or []
                 if isinstance(item, dict)
             ],
+            vm_config=VMConfig.from_dict(data.get("vm_config")),
+            bm_config=BMConfig.from_dict(data.get("bm_config")),
             state=WorkloadState.from_dict(data.get("state")),
             resource=WorkloadResource.from_dict(data.get("resource")),
             cost_per_hour=data.get("cost_per_hour"),
@@ -192,11 +338,12 @@ class WorkloadListItem:
     name: str = ""
     image: str = ""
     type: str = ""
+    reservation_uid: Optional[str] = None
+    created_by: Optional[WorkloadCreator] = None
     state: Optional[WorkloadState] = None
     resource: Optional[WorkloadResource] = None
     cost_per_hour: Optional[float] = None
     frozen_cost_per_hour: Optional[float] = None
-    revision: str = ""
     created_at: str = ""
     updated_at: str = ""
 
@@ -215,11 +362,12 @@ class WorkloadListItem:
             name=data.get("name", ""),
             image=data.get("image", ""),
             type=data.get("type", ""),
+            reservation_uid=data.get("reservation_uid"),
+            created_by=WorkloadCreator.from_dict(data.get("created_by")),
             state=WorkloadState.from_dict(data.get("state")),
             resource=WorkloadResource.from_dict(data.get("resource")),
             cost_per_hour=data.get("cost_per_hour"),
             frozen_cost_per_hour=data.get("frozen_cost_per_hour"),
-            revision=data.get("revision", ""),
             created_at=data.get("created_at", ""),
             updated_at=data.get("updated_at", ""),
         )
@@ -429,3 +577,181 @@ class WorkloadClient(BaseHTTPClient):
             params=params or None,
         )
         return WorkloadEventsResponse.from_dict(result)
+
+    def wait_until_ready(
+        self,
+        workload_uid: str,
+        *,
+        timeout: float = 300,
+        poll_interval: float = 5,
+    ) -> WorkloadStateResponse:
+        """Poll state until the workload is ``running``; works for every type.
+
+        Raises a 409 ``WORKLOAD_INVALID_STATE`` API error on a terminal state
+        and :class:`~targon.core.exceptions.TimeoutError` after ``timeout``.
+        """
+        workload_uid = _validate_non_empty(workload_uid, "workload_uid")
+        deadline = time.monotonic() + timeout
+        while True:
+            state = self.get_state(workload_uid)
+            status = state.status.lower()
+            if status == "running":
+                return state
+            if status in TERMINAL_WORKLOAD_STATES:
+                raise api_error(
+                    409,
+                    f"workload {workload_uid} entered terminal state "
+                    f"{state.status!r}"
+                    + (f": {state.message}" if state.message else ""),
+                    reason="WORKLOAD_INVALID_STATE",
+                    workload_uid=workload_uid,
+                )
+            if time.monotonic() >= deadline:
+                raise TimeoutError(
+                    f"Workload {workload_uid} did not reach 'running' within "
+                    f"{timeout:.0f}s (last status: {state.status!r})",
+                    timeout=timeout,
+                )
+            time.sleep(poll_interval)
+
+    def verify(self, uid: str, digest: str) -> bool:
+        """Report whether ``digest`` is the SHA-256 of the workload image."""
+        uid = _validate_non_empty(uid, "uid")
+        digest = _validate_non_empty(digest, "digest")
+        result = self._post(
+            self._path("verify"),
+            json={"uid": uid, "digest": digest},
+        )
+        data = _require_dict(result, source="verify", object_type="VerifyResponse")
+        return bool(data.get("verified", False))
+
+    def attach_ssh_key(
+        self, workload_uid: str, ssh_key_uid: str
+    ) -> SshKeyAttachResponse:
+        workload_uid = _validate_non_empty(workload_uid, "workload_uid")
+        ssh_key_uid = _validate_non_empty(ssh_key_uid, "ssh_key_uid")
+        result = self._request_no_retry(
+            "PUT",
+            self._path(workload_uid, "ssh-keys", ssh_key_uid),
+            _workload_uid=workload_uid,
+        )
+        return SshKeyAttachResponse.from_dict(result)
+
+    def detach_ssh_key(self, workload_uid: str, ssh_key_uid: str) -> None:
+        workload_uid = _validate_non_empty(workload_uid, "workload_uid")
+        ssh_key_uid = _validate_non_empty(ssh_key_uid, "ssh_key_uid")
+        self._delete(
+            self._path(workload_uid, "ssh-keys", ssh_key_uid),
+            _workload_uid=workload_uid,
+        )
+
+    def _images(self, route: str) -> List[WorkloadImage]:
+        result = self._get(self._path(route))
+        if not isinstance(result, list):
+            raise HydrationError(
+                f"Expected list for {route}, got {type(result).__name__}",
+                object_type="WorkloadImage",
+            )
+        return [
+            WorkloadImage.from_dict(item) for item in result if isinstance(item, dict)
+        ]
+
+    def _stream_text(self, path: str, params: Dict[str, Any], workload_uid: str):
+        """Yield non-empty lines from a text/plain streaming endpoint.
+
+        Streams use the no-retry session so a server error surfaces as an API
+        error instead of a replayed request.
+        """
+        response = self.client.sandbox_no_retry_session.request(
+            "GET",
+            f"{self.base_url}{path}",
+            params=params,
+            headers={"Accept": "text/plain"},
+            stream=True,
+            timeout=(self.client.config.timeout, None),
+            verify=self.client.config.verify_ssl,
+        )
+        try:
+            if response.status_code >= 400:
+                self._handle_response(response, workload_uid=workload_uid)
+            for line in response.iter_lines(decode_unicode=True):
+                if line:
+                    yield line.rstrip("\r\n")
+        finally:
+            response.close()
+
+
+class _WorkloadFields:
+    """Read-only access to the common fields of a wrapped workload."""
+
+    __slots__ = ()
+
+    workload: WorkloadResponse
+
+    @property
+    def uid(self) -> str:
+        return self.workload.uid
+
+    @property
+    def name(self) -> str:
+        return self.workload.name
+
+    @property
+    def image(self) -> str:
+        return self.workload.image
+
+    @property
+    def type(self) -> str:
+        return self.workload.type
+
+    @property
+    def resource_name(self) -> str:
+        return self.workload.resource_name
+
+    @property
+    def project_id(self) -> Optional[str]:
+        return self.workload.project_id
+
+    @property
+    def reservation_uid(self) -> Optional[str]:
+        return self.workload.reservation_uid
+
+    @property
+    def created_by(self) -> Optional[WorkloadCreator]:
+        return self.workload.created_by
+
+    @property
+    def ports(self) -> List[PortConfig]:
+        return self.workload.ports
+
+    @property
+    def ssh_keys(self) -> List[WorkloadSshKey]:
+        return self.workload.ssh_keys
+
+    @property
+    def state(self) -> Optional[WorkloadState]:
+        return self.workload.state
+
+    @property
+    def resource(self) -> Optional[WorkloadResource]:
+        return self.workload.resource
+
+    @property
+    def cost_per_hour(self) -> Optional[float]:
+        return self.workload.cost_per_hour
+
+    @property
+    def frozen_cost_per_hour(self) -> Optional[float]:
+        return self.workload.frozen_cost_per_hour
+
+    @property
+    def revision(self) -> str:
+        return self.workload.revision
+
+    @property
+    def created_at(self) -> str:
+        return self.workload.created_at
+
+    @property
+    def updated_at(self) -> str:
+        return self.workload.updated_at

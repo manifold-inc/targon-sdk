@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -18,9 +19,120 @@ type commonWorkloads interface {
 	Delete(context.Context, string) error
 	GetState(context.Context, string) (*WorkloadStateResponse, error)
 	GetEvents(context.Context, string, Page) (List[WorkloadEvent], error)
+	WaitUntilReady(context.Context, string, WaitOptions) (*WorkloadStateResponse, error)
+	Verify(context.Context, string, string) (bool, error)
+	AttachSSHKey(context.Context, string, string) (*SSHKeyAttachResponse, error)
+	DetachSSHKey(context.Context, string, string) error
 }
 
 var _ commonWorkloads = (*WorkloadService)(nil)
+
+func TestWorkloadVerifyPostsUIDAndDigest(t *testing.T) {
+	c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/tha/v3/orgs/acme/workloads/verify" {
+			t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
+		}
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		if want := map[string]any{"uid": "wrk-1", "digest": "abc123"}; !reflect.DeepEqual(body, want) {
+			t.Fatalf("body=%#v", body)
+		}
+		_, _ = w.Write([]byte(`{"verified":true}`))
+	})
+	ok, err := c.Workloads.Verify(context.Background(), " wrk-1 ", "abc123")
+	if err != nil || !ok {
+		t.Fatalf("verified=%v err=%v", ok, err)
+	}
+	if _, err := c.Workloads.Verify(context.Background(), "wrk-1", " "); err == nil {
+		t.Fatal("expected digest validation error")
+	}
+}
+
+func TestWorkloadSSHKeyAttachDetachRoutes(t *testing.T) {
+	var methods []string
+	c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/tha/v3/orgs/acme/workloads/wrk-1/ssh-keys/ssh-9" {
+			t.Errorf("path=%s", r.URL.Path)
+		}
+		methods = append(methods, r.Method)
+		if r.Method == http.MethodPut {
+			_, _ = w.Write([]byte(`{"workload_uid":"wrk-1","ssh_key_uid":"ssh-9"}`))
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+	attached, err := c.Workloads.AttachSSHKey(context.Background(), "wrk-1", "ssh-9")
+	if err != nil || attached.WorkloadUID != "wrk-1" || attached.SSHKeyUID != "ssh-9" {
+		t.Fatalf("attached=%+v err=%v", attached, err)
+	}
+	if err := c.Workloads.DetachSSHKey(context.Background(), "wrk-1", "ssh-9"); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(methods, []string{http.MethodPut, http.MethodDelete}) {
+		t.Fatalf("methods=%v", methods)
+	}
+}
+
+func TestWorkloadWaitUntilReadyForAnyType(t *testing.T) {
+	for _, workloadType := range []string{"VM", "BM", "SANDBOX"} {
+		var calls atomic.Int32
+		c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+			status := "provisioning"
+			if calls.Add(1) > 1 {
+				status = "running"
+			}
+			_ = json.NewEncoder(w).Encode(WorkloadStateResponse{UID: "wrk-1", WorkloadType: workloadType, Status: status})
+		})
+		state, err := c.Workloads.WaitUntilReady(context.Background(), "wrk-1", WaitOptions{
+			Timeout: time.Second, PollInterval: time.Millisecond,
+		})
+		if err != nil || state.Status != "running" || calls.Load() != 2 {
+			t.Fatalf("type=%s state=%+v err=%v calls=%d", workloadType, state, err, calls.Load())
+		}
+	}
+}
+
+func TestWorkloadWaitUntilReadyTerminalAndTimeout(t *testing.T) {
+	c := testClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(WorkloadStateResponse{UID: "wrk-1", WorkloadType: "VM", Status: "error", Message: "boom"})
+	})
+	_, err := c.Workloads.WaitUntilReady(context.Background(), "wrk-1", WaitOptions{Timeout: time.Second, PollInterval: time.Millisecond})
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) || apiErr.Reason != "WORKLOAD_INVALID_STATE" || !strings.Contains(apiErr.Message, "boom") {
+		t.Fatalf("err=%v", err)
+	}
+
+	c = testClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(WorkloadStateResponse{UID: "wrk-1", WorkloadType: "VM", Status: "provisioning"})
+	})
+	_, err = c.Workloads.WaitUntilReady(context.Background(), "wrk-1", WaitOptions{Timeout: 20 * time.Millisecond, PollInterval: time.Millisecond})
+	var timeoutErr *TimeoutError
+	if !errors.As(err, &timeoutErr) {
+		t.Fatalf("err=%T %v", err, err)
+	}
+}
+
+func TestWorkloadListDecodesBackendOperationShape(t *testing.T) {
+	c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/tha/v3/orgs/acme/workloads" {
+			t.Errorf("path=%s", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"items":[{"uid":"wrk-bm","type":"BM","name":"metal","image":"ubuntu-24.04",
+			"reservation_uid":"res-1","created_by":{"token_type":"USER","username":"dev"},
+			"state":{"status":"running","message":"","ready_replicas":1,"total_replicas":1},
+			"created_at":"2026-10-28T12:00:00Z","updated_at":"2026-10-28T12:00:00Z"}],"next_cursor":null}`))
+	})
+	page, err := c.Workloads.List(context.Background(), ListWorkloadsParams{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	item := page.Items[0]
+	if item.ReservationUID == nil || *item.ReservationUID != "res-1" || item.CreatedBy == nil || item.CreatedBy.Username != "dev" {
+		t.Fatalf("item=%+v", item)
+	}
+}
 
 func TestCurrentWorkloadTypes(t *testing.T) {
 	for _, workloadType := range []string{"VM", "BM", "SANDBOX"} {

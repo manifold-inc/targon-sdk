@@ -2,12 +2,15 @@ package targon
 
 import (
 	"context"
+	"regexp"
+	"strings"
 )
 
 var (
 	validWorkloadTypes      = map[string]struct{}{"VM": {}, "BM": {}, "SANDBOX": {}}
 	deprecatedWorkloadTypes = map[string]struct{}{"RENTAL": {}, "SERVERLESS": {}, "INFERENCE": {}, "FUNCTION": {}}
 	validLogTypes           = map[string]struct{}{"serial": {}, "qemu": {}}
+	hostnamePattern         = regexp.MustCompile(`^[a-z0-9]([a-z0-9\-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9\-]{0,61}[a-z0-9])?)*$`)
 )
 
 // PortConfig exposes a workload port.
@@ -17,20 +20,55 @@ type PortConfig struct {
 	Routing  string `json:"routing,omitempty"`
 }
 
-// VMConfig is required for VM workloads.
-type VMConfig struct {
-	Password string `json:"password"`
+// VMConfigInput is the optional vm_config accepted when registering a VM.
+// Hostname defaults to the workload name on the server.
+type VMConfigInput struct {
+	Hostname string `json:"hostname,omitempty"`
 }
 
-func (c VMConfig) toPayload() (map[string]string, error) {
-	password, err := requireNonEmpty(c.Password, "vm_config.password")
-	if err != nil {
-		return nil, err
+// BMConfigInput is the optional bm_config accepted when registering Bare Metal.
+// Hostname defaults to the workload name on the server.
+type BMConfigInput struct {
+	Hostname string `json:"hostname,omitempty"`
+}
+
+// hostnameConfig returns the {"hostname": ...} payload for vm_config or
+// bm_config, or nil when no hostname is set.
+func hostnameConfig(hostname, field string) (map[string]string, error) {
+	hostname = strings.ToLower(strings.TrimSpace(hostname))
+	if hostname == "" {
+		return nil, nil
 	}
-	if len(password) < 4 {
-		return nil, &ValidationError{Message: "vm_config.password must be at least 4 characters", Field: "vm_config.password"}
+	if len(hostname) > 63 || !hostnamePattern.MatchString(hostname) {
+		return nil, validation(field+" must be a valid RFC 1123 hostname (lowercase letters, digits, hyphens, dots; max 63 chars)", field, hostname)
 	}
-	return map[string]string{"password": password}, nil
+	return map[string]string{"hostname": hostname}, nil
+}
+
+// setOptionalString adds a trimmed value to payload, omitting empty strings.
+func setOptionalString(payload map[string]any, key, value string) {
+	if value = strings.TrimSpace(value); value != "" {
+		payload[key] = value
+	}
+}
+
+// VMConfig is the VM configuration returned on VM workloads.
+type VMConfig struct {
+	Hostname string `json:"hostname,omitempty"`
+}
+
+// BMConfig is the Bare Metal configuration returned on BM workloads.
+type BMConfig struct {
+	Region   string `json:"region"`
+	Hostname string `json:"hostname,omitempty"`
+}
+
+// WorkloadCreator identifies the token that created a workload.
+type WorkloadCreator struct {
+	TokenType string `json:"token_type"`
+	TokenName string `json:"token_name,omitempty"`
+	Email     string `json:"email,omitempty"`
+	Username  string `json:"username,omitempty"`
 }
 
 // WorkloadSSHKey is an SSH key attached to a workload.
@@ -85,17 +123,19 @@ type Workload struct {
 	Image             string            `json:"image"`
 	Type              string            `json:"type"`
 	ResourceName      string            `json:"resource_name"`
-	Region            string            `json:"region"`
-	Hostname          string            `json:"hostname"`
-	ProjectID         *string           `json:"project_id"`
-	Ports             []PortConfig      `json:"ports"`
-	SSHKeys           []WorkloadSSHKey  `json:"ssh_keys"`
+	ProjectID         *string           `json:"project_id,omitempty"`
+	ReservationUID    *string           `json:"reservation_uid,omitempty"`
+	CreatedBy         *WorkloadCreator  `json:"created_by,omitempty"`
+	Ports             []PortConfig      `json:"ports,omitempty"`
+	SSHKeys           []WorkloadSSHKey  `json:"ssh_keys,omitempty"`
+	VMConfig          *VMConfig         `json:"vm_config,omitempty"`
+	BMConfig          *BMConfig         `json:"bm_config,omitempty"`
 	SandboxConfig     *SandboxConfig    `json:"sandbox_config,omitempty"`
-	State             *WorkloadState    `json:"state"`
-	Resource          *WorkloadResource `json:"resource"`
-	CostPerHour       *float64          `json:"cost_per_hour"`
+	State             *WorkloadState    `json:"state,omitempty"`
+	Resource          *WorkloadResource `json:"resource,omitempty"`
+	CostPerHour       *float64          `json:"cost_per_hour,omitempty"`
 	FrozenCostPerHour *float64          `json:"frozen_cost_per_hour,omitempty"`
-	Revision          string            `json:"revision"`
+	Revision          string            `json:"revision,omitempty"`
 	CreatedAt         string            `json:"created_at"`
 	UpdatedAt         string            `json:"updated_at"`
 }
@@ -104,13 +144,14 @@ type Workload struct {
 type WorkloadListItem struct {
 	UID               string            `json:"uid"`
 	Name              string            `json:"name"`
-	Image             string            `json:"image"`
+	Image             string            `json:"image,omitempty"`
 	Type              string            `json:"type"`
-	State             *WorkloadState    `json:"state"`
-	Resource          *WorkloadResource `json:"resource"`
-	CostPerHour       *float64          `json:"cost_per_hour"`
+	ReservationUID    *string           `json:"reservation_uid,omitempty"`
+	CreatedBy         *WorkloadCreator  `json:"created_by,omitempty"`
+	State             *WorkloadState    `json:"state,omitempty"`
+	Resource          *WorkloadResource `json:"resource,omitempty"`
+	CostPerHour       *float64          `json:"cost_per_hour,omitempty"`
 	FrozenCostPerHour *float64          `json:"frozen_cost_per_hour,omitempty"`
-	Revision          string            `json:"revision"`
 	CreatedAt         string            `json:"created_at"`
 	UpdatedAt         string            `json:"updated_at"`
 }
@@ -166,14 +207,29 @@ type ListWorkloadsParams struct {
 	Name      string
 }
 
-// LogOptions controls log fetch/stream.
+// LogOptions controls VM log fetch and stream requests. Logs never follows;
+// StreamLogs always follows.
 type LogOptions struct {
 	Since    string
 	Tail     int
 	Previous bool
 	LogType  string
-	Follow   bool
 }
+
+// WorkloadImage is a bootable image returned by the vm-images and bm-images
+// routes.
+type WorkloadImage struct {
+	Name        string `json:"name"`
+	DisplayName string `json:"display_name"`
+	OSFamily    string `json:"os_family"`
+	Description string `json:"description,omitempty"`
+}
+
+// VMImage is a bootable VM image.
+type VMImage = WorkloadImage
+
+// BareMetalImage is an installable Bare Metal image.
+type BareMetalImage = WorkloadImage
 
 // WorkloadService manages workloads.
 type WorkloadService struct {
@@ -263,4 +319,101 @@ func (s *WorkloadService) GetEvents(ctx context.Context, workloadUID string, pag
 	var out List[WorkloadEvent]
 	err = s.client.do(ctx, "GET", path, page.query(), nil, &out)
 	return out, err
+}
+
+// WaitUntilReady polls workload state until it is running, reaches a terminal
+// state, or the wait times out. It works for every workload type.
+func (s *WorkloadService) WaitUntilReady(ctx context.Context, workloadUID string, options WaitOptions) (*WorkloadStateResponse, error) {
+	workloadUID, err := requireNonEmpty(workloadUID, "workload_uid")
+	if err != nil {
+		return nil, err
+	}
+	timeout, interval := waitDurations(options)
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	lastStatus := ""
+	return pollUntil(ctx, interval, func() (*WorkloadStateResponse, bool, error) {
+		state, err := s.GetState(ctx, workloadUID)
+		if err != nil {
+			return nil, false, err
+		}
+		lastStatus = state.Status
+		status := strings.ToLower(state.Status)
+		if status == "running" {
+			return state, true, nil
+		}
+		if _, ok := terminalWorkloadStates[status]; ok {
+			return nil, false, typedStateError(workloadUID, state.WorkloadType, state.Status, state.Message)
+		}
+		return state, false, nil
+	}, func(*WorkloadStateResponse) error {
+		return typedTimeoutError(workloadUID, "", "running", lastStatus, timeout.Seconds())
+	})
+}
+
+// Verify reports whether digest matches the SHA-256 of the workload image.
+func (s *WorkloadService) Verify(ctx context.Context, workloadUID, digest string) (bool, error) {
+	workloadUID, err := requireNonEmpty(workloadUID, "uid")
+	if err != nil {
+		return false, err
+	}
+	digest, err = requireNonEmpty(digest, "digest")
+	if err != nil {
+		return false, err
+	}
+	path, err := s.path("verify")
+	if err != nil {
+		return false, err
+	}
+	var out struct {
+		Verified bool `json:"verified"`
+	}
+	err = s.client.do(ctx, "POST", path, nil, map[string]string{"uid": workloadUID, "digest": digest}, &out)
+	return out.Verified, err
+}
+
+// AttachSSHKey attaches an organization SSH key to a workload.
+func (s *WorkloadService) AttachSSHKey(ctx context.Context, workloadUID, sshKeyUID string) (*SSHKeyAttachResponse, error) {
+	path, err := s.sshKeyPath(workloadUID, sshKeyUID)
+	if err != nil {
+		return nil, err
+	}
+	var out SSHKeyAttachResponse
+	if err := s.client.doNoRetry(ctx, "PUT", path, nil, nil, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// DetachSSHKey removes an SSH key from a workload.
+func (s *WorkloadService) DetachSSHKey(ctx context.Context, workloadUID, sshKeyUID string) error {
+	path, err := s.sshKeyPath(workloadUID, sshKeyUID)
+	if err != nil {
+		return err
+	}
+	return s.client.do(ctx, "DELETE", path, nil, nil, nil)
+}
+
+func (s *WorkloadService) sshKeyPath(workloadUID, sshKeyUID string) (string, error) {
+	workloadUID, err := requireNonEmpty(workloadUID, "workload_uid")
+	if err != nil {
+		return "", err
+	}
+	sshKeyUID, err = requireNonEmpty(sshKeyUID, "ssh_key_uid")
+	if err != nil {
+		return "", err
+	}
+	return s.path(workloadUID, "ssh-keys", sshKeyUID)
+}
+
+func (s *WorkloadService) images(ctx context.Context, route string) ([]WorkloadImage, error) {
+	path, err := s.path(route)
+	if err != nil {
+		return nil, err
+	}
+	var out []WorkloadImage
+	if err := s.client.do(ctx, "GET", path, nil, nil, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
 }

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Dict, Optional, Sequence
+from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Optional, Sequence
 
 from targon.client._workload_lifecycle import (
     deploy_typed,
@@ -12,13 +12,23 @@ from targon.client._workload_lifecycle import (
 )
 from targon.client.workload import (
     PortConfig,
+    VMConfig,
+    VMConfigInput,
+    WorkloadImage,
     WorkloadResponse,
+    _optional_hostname,
+    _optional_str,
     _validate_non_empty,
+    _WorkloadFields,
 )
 from targon.core.exceptions import ValidationError
 
 if TYPE_CHECKING:
     from targon.client.client import Client
+
+VALID_LOG_TYPES = frozenset({"serial", "qemu"})
+
+VMImage = WorkloadImage
 
 
 def _ports_payload(ports: Sequence[PortConfig]) -> list:
@@ -30,8 +40,50 @@ def _ports_payload(ports: Sequence[PortConfig]) -> list:
                 field="ports",
                 value=port,
             )
-        payload.append(port.to_payload())
+        if not isinstance(port.port, int) or not 1 <= port.port <= 65535:
+            raise ValidationError(
+                "VM port must be between 1 and 65535",
+                field="ports",
+                value=port.port,
+            )
+        if port.port == 22:
+            raise ValidationError(
+                "VM port 22 is reserved for SSH and cannot be forwarded",
+                field="ports",
+                value=port.port,
+            )
+        # VM ports are direct forwards; the backend discards routing.
+        item: Dict[str, Any] = {"port": port.port}
+        if port.protocol:
+            item["protocol"] = port.protocol
+        payload.append(item)
     return payload
+
+
+def _log_params(
+    *,
+    since: Optional[str],
+    tail: Optional[int],
+    previous: bool,
+    log_type: Optional[str],
+) -> Dict[str, Any]:
+    params: Dict[str, Any] = {}
+    if since:
+        params["since"] = since
+    if tail is not None:
+        params["tail"] = tail
+    if previous:
+        params["previous"] = "true"
+    if log_type is not None:
+        normalized = _validate_non_empty(log_type, "log_type").lower()
+        if normalized not in VALID_LOG_TYPES:
+            raise ValidationError(
+                "log_type must be one of qemu, serial",
+                field="log_type",
+                value=log_type,
+            )
+        params["type"] = normalized
+    return params
 
 
 @dataclass(frozen=True)
@@ -39,10 +91,11 @@ class VMCreateParams:
     name: str
     image: str
     resource_name: str
-    password: str
+    vm_config: Optional[VMConfigInput] = None
     project_id: Optional[str] = None
     reservation_uid: Optional[str] = None
     ssh_keys: Sequence[str] = ()
+    # Forwarded TCP/UDP ports. Port 22 is reserved for SSH.
     ports: Sequence[PortConfig] = ()
     wait_until_running: bool = True
 
@@ -54,12 +107,19 @@ class VMUpdateParams:
 
 
 @dataclass(frozen=True)
-class VM:
+class VM(_WorkloadFields):
+    """A VM workload bound to the client that fetched it.
+
+    Workload fields are exposed as read-only properties; the full response is
+    available as :attr:`workload`.
+    """
+
     _client: "Client" = field(repr=False, compare=False)
     workload: WorkloadResponse
 
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self.workload, name)
+    @property
+    def vm_config(self) -> Optional[VMConfig]:
+        return self.workload.vm_config
 
     def refresh(self) -> "VM":
         return self._client.vms.get(self.workload.uid)
@@ -84,6 +144,38 @@ class VM:
     def reboot(self) -> "VM":
         return self._client.vms.reboot(self.workload.uid)
 
+    def get_logs(
+        self,
+        *,
+        since: Optional[str] = None,
+        tail: Optional[int] = None,
+        previous: bool = False,
+        log_type: Optional[str] = None,
+    ) -> str:
+        return self._client.vms.get_logs(
+            self.workload.uid,
+            since=since,
+            tail=tail,
+            previous=previous,
+            log_type=log_type,
+        )
+
+    def stream_logs(
+        self,
+        *,
+        since: Optional[str] = None,
+        tail: Optional[int] = None,
+        previous: bool = False,
+        log_type: Optional[str] = None,
+    ) -> Iterator[str]:
+        return self._client.vms.stream_logs(
+            self.workload.uid,
+            since=since,
+            tail=tail,
+            previous=previous,
+            log_type=log_type,
+        )
+
 
 class VMClient:
     def __init__(self, client: "Client") -> None:
@@ -100,13 +192,6 @@ class VMClient:
                 field="params",
                 value=params,
             )
-        password = _validate_non_empty(params.password, "vm_config.password")
-        if len(password) < 4:
-            raise ValidationError(
-                "vm_config.password must be at least 4 characters",
-                field="vm_config.password",
-                value=params.password,
-            )
         payload: Dict[str, Any] = {
             "type": "VM",
             "name": _validate_non_empty(params.name, "name"),
@@ -115,12 +200,25 @@ class VMClient:
                 params.resource_name,
                 "resource_name",
             ),
-            "vm_config": {"password": password},
         }
-        if params.project_id is not None:
-            payload["project_id"] = params.project_id
-        if params.reservation_uid is not None:
-            payload["reservation_uid"] = params.reservation_uid
+        if params.vm_config is not None:
+            if not isinstance(params.vm_config, VMConfigInput):
+                raise ValidationError(
+                    "vm_config must be VMConfigInput",
+                    field="vm_config",
+                    value=params.vm_config,
+                )
+            hostname = _optional_hostname(
+                params.vm_config.hostname, "vm_config.hostname"
+            )
+            if hostname is not None:
+                payload["vm_config"] = {"hostname": hostname}
+        project_id = _optional_str(params.project_id, "project_id")
+        if project_id is not None:
+            payload["project_id"] = project_id
+        reservation_uid = _optional_str(params.reservation_uid, "reservation_uid")
+        if reservation_uid is not None:
+            payload["reservation_uid"] = reservation_uid
         if params.ssh_keys:
             payload["ssh_keys"] = list(params.ssh_keys)
         if params.ports:
@@ -209,6 +307,50 @@ class VMClient:
             _workload_uid=uid,
         )
         return self.get(uid)
+
+    def get_logs(
+        self,
+        uid: str,
+        *,
+        since: Optional[str] = None,
+        tail: Optional[int] = None,
+        previous: bool = False,
+        log_type: Optional[str] = None,
+    ) -> str:
+        """Fetch buffered VM logs. ``log_type`` is ``serial`` or ``qemu``."""
+        uid = _validate_non_empty(uid, "workload_uid")
+        params = _log_params(
+            since=since, tail=tail, previous=previous, log_type=log_type
+        )
+        result = self.client.workload._get(
+            self.client.workload._path(uid, "logs"),
+            params=params or None,
+            _workload_uid=uid,
+        )
+        return result if isinstance(result, str) else str(result)
+
+    def stream_logs(
+        self,
+        uid: str,
+        *,
+        since: Optional[str] = None,
+        tail: Optional[int] = None,
+        previous: bool = False,
+        log_type: Optional[str] = None,
+    ) -> Iterator[str]:
+        """Follow VM logs, yielding one line at a time."""
+        uid = _validate_non_empty(uid, "workload_uid")
+        params = _log_params(
+            since=since, tail=tail, previous=previous, log_type=log_type
+        )
+        params["follow"] = "true"
+        return self.client.workload._stream_text(
+            self.client.workload._path(uid, "logs"), params, uid
+        )
+
+    def images(self) -> List[VMImage]:
+        """List the images VM workloads can boot."""
+        return self.client.workload._images("vm-images")
 
     @staticmethod
     def _typed_response(data: Any) -> WorkloadResponse:

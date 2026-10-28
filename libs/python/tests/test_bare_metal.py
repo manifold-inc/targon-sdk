@@ -14,8 +14,8 @@ def bare_metal_body(uid="wrk-bm", name="metal-example"):
         "uid": uid,
         "type": "BM",
         "name": name,
-        "region": "us-central",
-        "hostname": "metal-01",
+        "reservation_uid": "res-bm",
+        "bm_config": {"region": "us-central", "hostname": "metal-01"},
     }
 
 
@@ -56,14 +56,18 @@ def test_register_uses_exact_payload_and_hydrates(client):
             image=" ubuntu-24.04 ",
             resource_name=" bm-a100 ",
             region=" us-central ",
-            hostname="metal-01",
-            project_id="proj-1",
+            bm_config=targon.BMConfigInput(hostname="Metal-01"),
+            project_id=" proj-1 ",
+            reservation_uid="res-bm",
         )
     )
 
     assert metal.uid == "wrk-bm"
-    assert metal.region == "us-central"
-    assert metal.hostname == "metal-01"
+    assert metal.bm_config == targon.BMConfig(region="us-central", hostname="metal-01")
+    assert metal.reservation_uid == "res-bm"
+    assert not hasattr(metal, "region")
+    assert not hasattr(metal, "hostname")
+    assert not hasattr(metal, "vm_config")
     assert client.sandbox_no_retry_session.request.call_args == call(
         "POST",
         "https://api.test/tha/v3/orgs/acme/workloads",
@@ -74,8 +78,9 @@ def test_register_uses_exact_payload_and_hydrates(client):
             "resource_name": "bm-a100",
             "region": "us-central",
             "ssh_keys": ["ssh-1", "ssh-2"],
-            "hostname": "metal-01",
+            "bm_config": {"hostname": "metal-01"},
             "project_id": "proj-1",
+            "reservation_uid": "res-bm",
         },
         timeout=30,
         verify=True,
@@ -94,6 +99,8 @@ def test_register_uses_exact_payload_and_hydrates(client):
         ({"resource_name": ""}, "resource_name"),
         ({"region": ""}, "region"),
         ({"ssh_keys": ()}, "ssh_keys"),
+        ({"bm_config": targon.BMConfigInput(hostname="-metal")}, "bm_config.hostname"),
+        ({"bm_config": {"hostname": "metal"}}, "bm_config"),
     ),
 )
 def test_register_validates_required_fields_before_request(client, overrides, field):
@@ -120,9 +127,90 @@ def test_create_params_do_not_expose_unsupported_workload_fields():
         "resource_name",
         "region",
         "ssh_keys",
-        "hostname",
+        "bm_config",
         "project_id",
+        "reservation_uid",
         "wait_until_running",
+    }
+
+
+def test_register_omits_empty_optional_fields(client):
+    client.sandbox_no_retry_session.request.return_value = Response(
+        body={"uid": "wrk-bm"}
+    )
+    client.session.request.return_value = Response(body=bare_metal_body())
+
+    client.bare_metal.register(
+        create_params(
+            bm_config=targon.BMConfigInput(),
+            project_id=" ",
+            reservation_uid="",
+        )
+    )
+
+    payload = client.sandbox_no_retry_session.request.call_args.kwargs["json"]
+    assert set(payload) == {
+        "type",
+        "name",
+        "image",
+        "resource_name",
+        "region",
+        "ssh_keys",
+    }
+
+
+def test_default_wait_is_thirty_minutes(client, monkeypatch):
+    seen = {}
+
+    def fake_deploy_typed(_client, uid, expected_type, **kwargs):
+        seen.update(kwargs)
+        return targon.client.WorkloadResponse.from_dict(bare_metal_body(uid=uid))
+
+    monkeypatch.setattr(
+        "targon.client.bare_metal.deploy_typed",
+        fake_deploy_typed,
+    )
+    client.sandbox_no_retry_session.request.return_value = Response(
+        body={"uid": "wrk-bm"}
+    )
+
+    assert targon.DEFAULT_BARE_METAL_WAIT_TIMEOUT == 1800
+    client.bare_metal.create(create_params())
+    assert seen["timeout"] == 1800
+    client.bare_metal.deploy("wrk-bm")
+    assert seen["timeout"] == 1800
+    client.bare_metal.deploy("wrk-bm", timeout=60)
+    assert seen["timeout"] == 60
+
+
+def test_images_uses_bm_images_route(client):
+    client.session.request.return_value = Response(
+        body=[
+            {"name": "ubuntu-22.04-bm", "display_name": "Ubuntu", "os_family": "linux"}
+        ]
+    )
+
+    images = client.bare_metal.images()
+
+    assert images == [targon.BareMetalImage("ubuntu-22.04-bm", "Ubuntu", "linux")]
+    assert client.session.request.call_args.args == (
+        "GET",
+        "https://api.test/tha/v3/orgs/acme/workloads/bm-images",
+    )
+
+
+def test_reinstall_reuses_attached_keys_when_omitted(client):
+    client.sandbox_no_retry_session.request.return_value = Response(
+        body={"uid": "wrk-bm"}
+    )
+    client.session.request.return_value = Response(body=bare_metal_body())
+
+    client.bare_metal.reinstall(
+        "wrk-bm", targon.BareMetalReinstallParams(image="ubuntu-24.04")
+    )
+
+    assert client.sandbox_no_retry_session.request.call_args.kwargs["json"] == {
+        "image": "ubuntu-24.04"
     }
 
 
@@ -258,8 +346,8 @@ def test_reinstall_requires_typed_request(client, request_value, field):
             "image",
         ),
         (
-            lambda: targon.BareMetalReinstallParams(image="ubuntu", ssh_keys=()),
-            "ssh_keys",
+            lambda: targon.BareMetalReinstallParams(image="ubuntu", hostname="bad_x"),
+            "hostname",
         ),
     ),
 )

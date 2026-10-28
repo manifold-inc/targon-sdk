@@ -3,7 +3,11 @@ from __future__ import annotations
 import time
 from typing import TYPE_CHECKING, Any, Callable, Dict, Optional
 
-from targon.client.workload import WorkloadResponse, _validate_non_empty
+from targon.client.workload import (
+    TERMINAL_WORKLOAD_STATES,
+    WorkloadResponse,
+    _validate_non_empty,
+)
 from targon.core.exceptions import (
     HydrationError,
     TimeoutError,
@@ -13,9 +17,6 @@ from targon.core.exceptions import (
 
 if TYPE_CHECKING:
     from targon.client.client import Client
-
-
-TERMINAL_WORKLOAD_STATES = frozenset({"error", "suspended", "deleted"})
 
 
 def require_type(

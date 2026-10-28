@@ -3,21 +3,29 @@ package targon
 import (
 	"context"
 	"net/http"
+	"time"
 )
+
+// DefaultBareMetalWaitTimeout is the Create and Deploy wait timeout used when
+// WaitOptions.Timeout is unset. Bare Metal provisioning is much slower than VM
+// or Sandbox provisioning.
+const DefaultBareMetalWaitTimeout = 30 * time.Minute
 
 // BareMetalCreateParams is the public Bare Metal registration contract.
 type BareMetalCreateParams struct {
-	Name         string
-	Image        string
-	ResourceName string
-	Region       string
-	Hostname     string
-	ProjectID    string
-	SSHKeys      []string
-	Wait         WaitOptions
+	Name           string
+	Image          string
+	ResourceName   string
+	Region         string
+	BMConfig       *BMConfigInput
+	ProjectID      string
+	ReservationUID string
+	SSHKeys        []string
+	Wait           WaitOptions
 }
 
-// BareMetalReinstallParams contains the fields required to reinstall Bare Metal.
+// BareMetalReinstallParams contains the fields accepted by Bare Metal
+// reinstall. When SSHKeys is empty the currently attached keys are reused.
 type BareMetalReinstallParams struct {
 	Image    string
 	SSHKeys  []string
@@ -63,12 +71,17 @@ func (s *BareMetalService) registrationPayload(params BareMetalCreateParams) (ma
 		"region":        region,
 		"ssh_keys":      params.SSHKeys,
 	}
-	if params.Hostname != "" {
-		payload["hostname"] = params.Hostname
+	if params.BMConfig != nil {
+		bmConfig, err := hostnameConfig(params.BMConfig.Hostname, "bm_config.hostname")
+		if err != nil {
+			return nil, err
+		}
+		if bmConfig != nil {
+			payload["bm_config"] = bmConfig
+		}
 	}
-	if params.ProjectID != "" {
-		payload["project_id"] = params.ProjectID
-	}
+	setOptionalString(payload, "project_id", params.ProjectID)
+	setOptionalString(payload, "reservation_uid", params.ReservationUID)
 	return payload, nil
 }
 
@@ -84,12 +97,21 @@ func (s *BareMetalService) Register(ctx context.Context, params BareMetalCreateP
 	return hydrateBareMetal(s, workload), nil
 }
 
+// Deploy starts provisioning. Without WaitOptions.Timeout it waits up to
+// DefaultBareMetalWaitTimeout for the workload to run.
 func (s *BareMetalService) Deploy(ctx context.Context, workloadUID string, wait WaitOptions) (*BareMetal, error) {
-	workload, err := deployTyped(ctx, s.client, workloadUID, "BM", wait)
+	workload, err := deployTyped(ctx, s.client, workloadUID, "BM", bareMetalWait(wait))
 	if err != nil {
 		return nil, err
 	}
 	return hydrateBareMetal(s, workload), nil
+}
+
+func bareMetalWait(wait WaitOptions) WaitOptions {
+	if wait.Timeout <= 0 {
+		wait.Timeout = DefaultBareMetalWaitTimeout
+	}
+	return wait
 }
 
 func (s *BareMetalService) Create(ctx context.Context, params BareMetalCreateParams) (*BareMetal, error) {
@@ -149,17 +171,23 @@ func (s *BareMetalService) Reinstall(
 	if err != nil {
 		return nil, err
 	}
-	if len(params.SSHKeys) == 0 {
-		return nil, validation("at least one SSH key is required", "ssh_keys", params.SSHKeys)
+	payload := map[string]any{"image": image}
+	if len(params.SSHKeys) > 0 {
+		payload["ssh_keys"] = params.SSHKeys
 	}
-	payload := map[string]any{
-		"image":    image,
-		"ssh_keys": params.SSHKeys,
+	hostname, err := hostnameConfig(params.Hostname, "hostname")
+	if err != nil {
+		return nil, err
 	}
-	if params.Hostname != "" {
-		payload["hostname"] = params.Hostname
+	for key, value := range hostname {
+		payload[key] = value
 	}
 	return s.operation(ctx, workloadUID, "reinstall", payload)
+}
+
+// Images lists the images Bare Metal workloads can install.
+func (s *BareMetalService) Images(ctx context.Context) ([]BareMetalImage, error) {
+	return s.client.Workloads.images(ctx, "bm-images")
 }
 
 func hydrateBareMetal(service *BareMetalService, workload *Workload) *BareMetal {

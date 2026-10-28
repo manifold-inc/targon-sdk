@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Dict, Optional, Sequence
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Sequence
 
 from targon.client._workload_lifecycle import (
     deploy_typed,
@@ -9,11 +9,26 @@ from targon.client._workload_lifecycle import (
     register_typed,
     register_workload,
 )
-from targon.client.workload import WorkloadResponse, _validate_non_empty
+from targon.client.workload import (
+    BMConfig,
+    BMConfigInput,
+    WorkloadImage,
+    WorkloadResponse,
+    _optional_hostname,
+    _optional_str,
+    _validate_non_empty,
+    _WorkloadFields,
+)
 from targon.core.exceptions import ValidationError
 
 if TYPE_CHECKING:
     from targon.client.client import Client
+
+#: Create/deploy wait timeout in seconds when the caller does not pass one.
+#: Bare Metal provisioning is much slower than VM or Sandbox provisioning.
+DEFAULT_BARE_METAL_WAIT_TIMEOUT = 30 * 60
+
+BareMetalImage = WorkloadImage
 
 
 @dataclass(frozen=True)
@@ -23,25 +38,35 @@ class BareMetalCreateParams:
     resource_name: str
     region: str
     ssh_keys: Sequence[str]
-    hostname: Optional[str] = None
+    bm_config: Optional[BMConfigInput] = None
     project_id: Optional[str] = None
+    reservation_uid: Optional[str] = None
     wait_until_running: bool = True
 
 
 @dataclass(frozen=True)
 class BareMetalReinstallParams:
+    """Reinstall request. Empty ``ssh_keys`` reuses the attached keys."""
+
     image: str
-    ssh_keys: Sequence[str]
+    ssh_keys: Sequence[str] = ()
     hostname: Optional[str] = None
 
 
 @dataclass(frozen=True)
-class BareMetal:
+class BareMetal(_WorkloadFields):
+    """A Bare Metal workload bound to the client that fetched it.
+
+    Workload fields are exposed as read-only properties; the full response is
+    available as :attr:`workload`.
+    """
+
     _client: "Client" = field(repr=False, compare=False)
     workload: WorkloadResponse
 
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self.workload, name)
+    @property
+    def bm_config(self) -> Optional[BMConfig]:
+        return self.workload.bm_config
 
     def refresh(self) -> "BareMetal":
         return self._client.bare_metal.get(self.workload.uid)
@@ -50,7 +75,7 @@ class BareMetal:
         self,
         *,
         wait: bool = True,
-        timeout: float = 300,
+        timeout: float = DEFAULT_BARE_METAL_WAIT_TIMEOUT,
         poll_interval: float = 5,
     ) -> "BareMetal":
         return self._client.bare_metal.deploy(
@@ -81,20 +106,7 @@ class BareMetalClient:
         return BareMetal(self.client, workload)
 
     @staticmethod
-    def _require_ssh_keys(ssh_keys: Sequence[str]) -> list:
-        if not ssh_keys:
-            raise ValidationError(
-                "at least one SSH key is required",
-                field="ssh_keys",
-                value=ssh_keys,
-            )
-        return list(ssh_keys)
-
-    @classmethod
-    def _registration_payload(
-        cls,
-        params: BareMetalCreateParams,
-    ) -> Dict[str, Any]:
+    def _registration_payload(params: BareMetalCreateParams) -> Dict[str, Any]:
         if not isinstance(params, BareMetalCreateParams):
             raise ValidationError(
                 "params must be BareMetalCreateParams",
@@ -110,12 +122,32 @@ class BareMetalClient:
                 "resource_name",
             ),
             "region": _validate_non_empty(params.region, "region"),
-            "ssh_keys": cls._require_ssh_keys(params.ssh_keys),
         }
-        if params.hostname:
-            payload["hostname"] = params.hostname
-        if params.project_id:
-            payload["project_id"] = params.project_id
+        if not params.ssh_keys:
+            raise ValidationError(
+                "at least one SSH key is required",
+                field="ssh_keys",
+                value=params.ssh_keys,
+            )
+        payload["ssh_keys"] = list(params.ssh_keys)
+        if params.bm_config is not None:
+            if not isinstance(params.bm_config, BMConfigInput):
+                raise ValidationError(
+                    "bm_config must be BMConfigInput",
+                    field="bm_config",
+                    value=params.bm_config,
+                )
+            hostname = _optional_hostname(
+                params.bm_config.hostname, "bm_config.hostname"
+            )
+            if hostname is not None:
+                payload["bm_config"] = {"hostname": hostname}
+        project_id = _optional_str(params.project_id, "project_id")
+        if project_id is not None:
+            payload["project_id"] = project_id
+        reservation_uid = _optional_str(params.reservation_uid, "reservation_uid")
+        if reservation_uid is not None:
+            payload["reservation_uid"] = reservation_uid
         return payload
 
     def register(self, params: BareMetalCreateParams) -> BareMetal:
@@ -131,7 +163,7 @@ class BareMetalClient:
         uid: str,
         *,
         wait: bool = True,
-        timeout: float = 300,
+        timeout: float = DEFAULT_BARE_METAL_WAIT_TIMEOUT,
         poll_interval: float = 5,
     ) -> BareMetal:
         return self._hydrate(
@@ -149,7 +181,7 @@ class BareMetalClient:
         self,
         params: BareMetalCreateParams,
         *,
-        timeout: float = 300,
+        timeout: float = DEFAULT_BARE_METAL_WAIT_TIMEOUT,
         poll_interval: float = 5,
     ) -> BareMetal:
         uid = register_workload(
@@ -204,8 +236,14 @@ class BareMetalClient:
             )
         payload: Dict[str, Any] = {
             "image": _validate_non_empty(request.image, "image"),
-            "ssh_keys": self._require_ssh_keys(request.ssh_keys),
         }
-        if request.hostname:
-            payload["hostname"] = request.hostname
+        if request.ssh_keys:
+            payload["ssh_keys"] = list(request.ssh_keys)
+        hostname = _optional_hostname(request.hostname, "hostname")
+        if hostname is not None:
+            payload["hostname"] = hostname
         return self._operation(uid, "reinstall", payload)
+
+    def images(self) -> List[BareMetalImage]:
+        """List the images Bare Metal workloads can install."""
+        return self.client.workload._images("bm-images")

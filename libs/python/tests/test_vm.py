@@ -1,4 +1,5 @@
-from unittest.mock import call
+from dataclasses import FrozenInstanceError, fields
+from unittest.mock import Mock, call
 
 import pytest
 from conftest import Response
@@ -34,12 +35,12 @@ def test_register_uses_exact_payload_and_hydrates(client):
         targon.VMCreateParams(
             name=" vm-example ",
             image=" ubuntu-24.04 ",
-            resource_name=" cpu-small ",
-            password=" secret ",
-            project_id="proj-1",
-            reservation_uid="res-1",
+            resource_name=f" {targon.Resources.H100_SMALL} ",
+            vm_config=targon.VMConfigInput(hostname=" VM-Host.Example "),
+            project_id=" proj-1 ",
+            reservation_uid=" res-1 ",
             ssh_keys=("ssh-1",),
-            ports=(PortConfig(22, protocol="TCP", routing="PUBLIC"),),
+            ports=(PortConfig(8080, protocol="TCP"),),
         )
     )
 
@@ -54,12 +55,12 @@ def test_register_uses_exact_payload_and_hydrates(client):
         "type": "VM",
         "name": "vm-example",
         "image": "ubuntu-24.04",
-        "resource_name": "cpu-small",
-        "vm_config": {"password": "secret"},
+        "resource_name": "h100-small",
+        "vm_config": {"hostname": "vm-host.example"},
         "project_id": "proj-1",
         "reservation_uid": "res-1",
         "ssh_keys": ["ssh-1"],
-        "ports": [{"port": 22, "protocol": "TCP", "routing": "PUBLIC"}],
+        "ports": [{"port": 8080, "protocol": "TCP"}],
     }
     assert client.session.request.call_args.args == (
         "GET",
@@ -67,14 +68,67 @@ def test_register_uses_exact_payload_and_hydrates(client):
     )
 
 
-@pytest.mark.parametrize("password", ("", "abc"))
-def test_register_validates_password_before_request(client, password):
+def test_register_omits_empty_optional_fields(client):
+    client.sandbox_no_retry_session.request.return_value = Response(
+        body={"uid": "wrk-vm"}
+    )
+    client.session.request.return_value = Response(body=vm_body())
+
+    client.vms.register(
+        targon.VMCreateParams(
+            "vm",
+            "ubuntu-24.04",
+            targon.Resources.H100_SMALL,
+            vm_config=targon.VMConfigInput(hostname="  "),
+            project_id="",
+            reservation_uid="  ",
+        )
+    )
+
+    assert client.sandbox_no_retry_session.request.call_args.kwargs["json"] == {
+        "type": "VM",
+        "name": "vm",
+        "image": "ubuntu-24.04",
+        "resource_name": "h100-small",
+    }
+
+
+def test_vm_params_have_no_password():
+    assert "password" not in {f.name for f in fields(targon.VMCreateParams)}
+    assert {f.name for f in fields(targon.VMConfigInput)} == {"hostname"}
+
+
+@pytest.mark.parametrize(
+    ("overrides", "field"),
+    (
+        (
+            {"vm_config": targon.VMConfigInput(hostname="bad_host")},
+            "vm_config.hostname",
+        ),
+        ({"vm_config": targon.VMConfigInput(hostname="a" * 64)}, "vm_config.hostname"),
+        ({"vm_config": {"hostname": "vm"}}, "vm_config"),
+        ({"ports": (PortConfig(22),)}, "ports"),
+        ({"ports": (PortConfig(70000),)}, "ports"),
+        ({"project_id": 42}, "project_id"),
+    ),
+)
+def test_register_validates_before_request(client, overrides, field):
     with pytest.raises(ValidationError) as exc:
         client.vms.register(
-            targon.VMCreateParams("vm", "ubuntu", "cpu-small", password)
+            targon.VMCreateParams(
+                "vm", "ubuntu-24.04", targon.Resources.H100_SMALL, **overrides
+            )
         )
 
-    assert exc.value.field == "vm_config.password"
+    assert exc.value.field == field
+    client.sandbox_no_retry_session.request.assert_not_called()
+
+
+def test_update_rejects_ssh_port(client):
+    with pytest.raises(ValidationError) as exc:
+        client.vms.update("wrk-vm", targon.VMUpdateParams(ports=(PortConfig(22),)))
+
+    assert exc.value.field == "ports"
     client.sandbox_no_retry_session.request.assert_not_called()
 
 
@@ -102,7 +156,7 @@ def test_create_deploys_once_and_waits_until_running(client):
     ]
 
     vm = client.vms.create(
-        targon.VMCreateParams("vm", "ubuntu", "cpu-small", "secret"),
+        targon.VMCreateParams("vm", "ubuntu-24.04", targon.Resources.H100_SMALL),
         timeout=1,
         poll_interval=0,
     )
@@ -138,7 +192,10 @@ def test_create_can_skip_wait_but_still_hydrates(client):
 
     vm = client.vms.create(
         targon.VMCreateParams(
-            "vm", "ubuntu", "cpu-small", "secret", wait_until_running=False
+            "vm",
+            "ubuntu-24.04",
+            targon.Resources.H100_SMALL,
+            wait_until_running=False,
         )
     )
 
@@ -284,7 +341,7 @@ def test_update_and_reboot_use_no_retry_transport(client):
             "https://api.test/tha/v3/orgs/acme/workloads/wrk-vm",
             json={
                 "name": "renamed",
-                "ports": [{"port": 443, "protocol": "TCP", "routing": "PROXIED"}],
+                "ports": [{"port": 443, "protocol": "TCP"}],
             },
             timeout=30,
             verify=True,
@@ -336,3 +393,114 @@ def test_bound_vm_forwards_lifecycle_calls(client):
     assert all(
         item._client is client for item in (refreshed, deployed, updated, rebooted)
     )
+
+
+def test_get_logs_uses_vm_log_query(client):
+    text_response = Response(content_type="text/plain")
+    text_response.text = "booted\n"
+    client.session.request.side_effect = [Response(body=vm_body()), text_response]
+
+    logs = client.vms.get("wrk-vm").get_logs(tail=25, log_type="SERIAL", previous=True)
+
+    assert logs == "booted\n"
+    request = client.session.request.call_args
+    assert request.args == (
+        "GET",
+        "https://api.test/tha/v3/orgs/acme/workloads/wrk-vm/logs",
+    )
+    assert request.kwargs["params"] == {
+        "tail": 25,
+        "previous": "true",
+        "type": "serial",
+    }
+
+
+def test_get_logs_rejects_unknown_log_type(client):
+    with pytest.raises(ValidationError) as exc:
+        client.vms.get_logs("wrk-vm", log_type="kernel")
+
+    assert exc.value.field == "log_type"
+    client.session.request.assert_not_called()
+
+
+def test_stream_logs_follows_without_retries(client):
+    streamed = Mock(status_code=200, headers={"Content-Type": "text/plain"})
+    streamed.iter_lines.return_value = iter(["line one", "", "line two\r"])
+    client.sandbox_no_retry_session.request.return_value = streamed
+
+    lines = list(client.vms.stream_logs("wrk-vm", tail=5, log_type="qemu"))
+
+    assert lines == ["line one", "line two"]
+    request = client.sandbox_no_retry_session.request.call_args
+    assert request.args == (
+        "GET",
+        "https://api.test/tha/v3/orgs/acme/workloads/wrk-vm/logs",
+    )
+    assert request.kwargs["params"] == {"tail": 5, "type": "qemu", "follow": "true"}
+    assert request.kwargs["stream"] is True
+    assert request.kwargs["headers"] == {"Accept": "text/plain"}
+    streamed.close.assert_called_once()
+
+
+def test_stream_logs_raises_api_errors(client):
+    client.sandbox_no_retry_session.request.return_value = Response(
+        status=501,
+        body={"error": "nope", "reason": "WORKLOAD_LOGS_TYPE_NOT_SUPPORTED"},
+    )
+    client.sandbox_no_retry_session.request.return_value.close = Mock()
+
+    with pytest.raises(TargonAPIError) as exc:
+        list(client.vms.stream_logs("wrk-vm"))
+
+    assert exc.value.reason == "WORKLOAD_LOGS_TYPE_NOT_SUPPORTED"
+
+
+def test_images_uses_vm_images_route(client):
+    client.session.request.return_value = Response(
+        body=[
+            {
+                "name": "ubuntu-24.04",
+                "display_name": "Ubuntu 24.04",
+                "os_family": "linux",
+                "description": "LTS",
+            }
+        ]
+    )
+
+    images = client.vms.images()
+
+    assert images == [
+        targon.VMImage("ubuntu-24.04", "Ubuntu 24.04", "linux", "LTS"),
+    ]
+    assert client.session.request.call_args.args == (
+        "GET",
+        "https://api.test/tha/v3/orgs/acme/workloads/vm-images",
+    )
+
+
+def test_vm_exposes_read_only_properties_without_getattr(client):
+    client.session.request.return_value = Response(
+        body={
+            **vm_body(),
+            "reservation_uid": "res-1",
+            "created_by": {"token_type": "SERVICE", "token_name": "ci"},
+            "vm_config": {"hostname": "vm-host"},
+        }
+    )
+    vm = client.vms.get("wrk-vm")
+
+    assert "__getattr__" not in vars(targon.VM)
+    assert vm.reservation_uid == "res-1"
+    assert vm.created_by.token_name == "ci"
+    assert vm.vm_config.hostname == "vm-host"
+    assert not hasattr(vm, "bm_config")
+    assert not hasattr(vm, "password")
+    with pytest.raises(AttributeError):
+        vm.region
+    with pytest.raises((AttributeError, FrozenInstanceError)):
+        vm.name = "renamed"
+    # Unpickling or copying calls getattr before fields exist; this used to
+    # recurse through __getattr__.
+    blank = object.__new__(targon.VM)
+    with pytest.raises(AttributeError):
+        blank.missing

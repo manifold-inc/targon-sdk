@@ -1,7 +1,9 @@
 from targon.client.bare_metal import (
+    DEFAULT_BARE_METAL_WAIT_TIMEOUT,
     BareMetal,
     BareMetalClient,
     BareMetalCreateParams,
+    BareMetalImage,
     BareMetalReinstallParams,
 )
 from targon.client.client import Client
@@ -36,7 +38,14 @@ from targon.client.sandbox import (
     TerminalSession,
 )
 from targon.client.token import ApiToken, ServiceToken
-from targon.client.vm import VM, VMClient, VMCreateParams, VMUpdateParams
+from targon.client.vm import VM, VMClient, VMCreateParams, VMImage, VMUpdateParams
+from targon.client.workload import (
+    BMConfig,
+    BMConfigInput,
+    PortConfig,
+    VMConfig,
+    VMConfigInput,
+)
 from targon.core.exceptions import (
     AccessTicketError,
     GatewayError,
@@ -56,10 +65,18 @@ __all__ = [
     "VMClient",
     "VMCreateParams",
     "VMUpdateParams",
+    "VMConfig",
+    "VMConfigInput",
+    "VMImage",
+    "PortConfig",
     "BareMetal",
     "BareMetalClient",
     "BareMetalCreateParams",
     "BareMetalReinstallParams",
+    "BMConfig",
+    "BMConfigInput",
+    "BareMetalImage",
+    "DEFAULT_BARE_METAL_WAIT_TIMEOUT",
     "Sandbox",
     "SandboxesClient",
     "SandboxCreateParams",

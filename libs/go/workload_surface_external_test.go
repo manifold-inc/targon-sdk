@@ -14,18 +14,30 @@ type commonWorkloads interface {
 	Delete(context.Context, string) error
 	GetState(context.Context, string) (*targon.WorkloadStateResponse, error)
 	GetEvents(context.Context, string, targon.Page) (targon.List[targon.WorkloadEvent], error)
+	WaitUntilReady(context.Context, string, targon.WaitOptions) (*targon.WorkloadStateResponse, error)
+	Verify(context.Context, string, string) (bool, error)
+	AttachSSHKey(context.Context, string, string) (*targon.SSHKeyAttachResponse, error)
+	DetachSSHKey(context.Context, string, string) error
 }
 
+// TestCommonWorkloadServiceSurface pins the common service to operations the
+// backend accepts for every workload type. Generic Create, Update, Deploy,
+// Suspend, Exec, and Volume operations stay removed; logs and images live on
+// the typed VM and Bare Metal services.
 func TestCommonWorkloadServiceSurface(t *testing.T) {
 	var _ commonWorkloads = (*targon.WorkloadService)(nil)
 
 	service := reflect.TypeOf((*targon.WorkloadService)(nil))
 	wantMethods := map[string]struct{}{
-		"Delete":    {},
-		"Get":       {},
-		"GetEvents": {},
-		"GetState":  {},
-		"List":      {},
+		"AttachSSHKey":   {},
+		"Delete":         {},
+		"DetachSSHKey":   {},
+		"Get":            {},
+		"GetEvents":      {},
+		"GetState":       {},
+		"List":           {},
+		"Verify":         {},
+		"WaitUntilReady": {},
 	}
 	for i := 0; i < service.NumMethod(); i++ {
 		method := service.Method(i)
@@ -39,10 +51,38 @@ func TestCommonWorkloadServiceSurface(t *testing.T) {
 	}
 
 	assertNoField(t, reflect.TypeOf(targon.Client{}), "Volumes")
-	for _, field := range []string{"Volumes", "Envs", "Commands", "Args", "RegistryAuth"} {
+	assertNoField(t, reflect.TypeOf(targon.Client{}), "Rentals")
+	for _, field := range []string{"Volumes", "Envs", "Commands", "Args", "RegistryAuth", "Region", "Hostname"} {
 		assertNoField(t, reflect.TypeOf(targon.Workload{}), field)
 	}
 	assertNoField(t, reflect.TypeOf(targon.WorkloadListItem{}), "Volumes")
+}
+
+func TestTypedServicesExposeRestoredTypeSpecificOperations(t *testing.T) {
+	for _, tt := range []struct {
+		typ     reflect.Type
+		methods []string
+	}{
+		{reflect.TypeOf((*targon.VMService)(nil)), []string{"Logs", "StreamLogs", "Images", "Reboot"}},
+		{reflect.TypeOf((*targon.VM)(nil)), []string{"Logs", "StreamLogs", "Reboot"}},
+		{reflect.TypeOf((*targon.BareMetalService)(nil)), []string{"Images", "Reboot", "PowerOn", "PowerOff", "Reinstall"}},
+	} {
+		for _, method := range tt.methods {
+			if _, ok := tt.typ.MethodByName(method); !ok {
+				t.Errorf("%s is missing %s", tt.typ, method)
+			}
+		}
+	}
+	for _, method := range []string{"PowerOn", "PowerOff", "Reinstall", "Password"} {
+		if _, ok := reflect.TypeOf((*targon.VMService)(nil)).MethodByName(method); ok {
+			t.Errorf("VMService must not expose %s", method)
+		}
+	}
+	for _, method := range []string{"Logs", "StreamLogs"} {
+		if _, ok := reflect.TypeOf((*targon.BareMetalService)(nil)).MethodByName(method); ok {
+			t.Errorf("BareMetalService must not expose %s", method)
+		}
+	}
 }
 
 func assertNoField(t *testing.T, typ reflect.Type, field string) {

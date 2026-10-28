@@ -13,6 +13,23 @@ import (
 	"time"
 )
 
+// bareMetalWorkloadResponse is GET /workloads/{uid} for BM in the backend
+// shape: region and hostname are nested under bm_config.
+const bareMetalWorkloadResponse = `{
+  "uid": "wrk-bm",
+  "type": "BM",
+  "created_by": {"token_type": "USER", "email": "dev@example.com", "username": "dev"},
+  "name": "metal-example",
+  "image": "ubuntu-24.04",
+  "resource_name": "bm-a100",
+  "reservation_uid": "res-bm",
+  "ssh_keys": [{"uid": "ssh-1", "name": "laptop", "public_key_raw": "ssh-ed25519 AAAA"}],
+  "bm_config": {"region": "us-central", "hostname": "metal-01"},
+  "state": {"status": "registered", "message": "Workload registered, awaiting deploy", "ready_replicas": 0, "total_replicas": 0},
+  "created_at": "2026-10-28T12:00:00Z",
+  "updated_at": "2026-10-28T12:00:00Z"
+}`
+
 func TestBareMetalRegisterExactWireContractAndHydration(t *testing.T) {
 	var posts, gets atomic.Int32
 	c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
@@ -24,14 +41,15 @@ func TestBareMetalRegisterExactWireContractAndHydration(t *testing.T) {
 				t.Fatal(err)
 			}
 			want := map[string]any{
-				"type":          "BM",
-				"name":          "metal-example",
-				"image":         "ubuntu-24.04",
-				"resource_name": "bm-a100",
-				"region":        "us-central",
-				"hostname":      "metal-01",
-				"project_id":    "proj-1",
-				"ssh_keys":      []any{"ssh-1", "ssh-2"},
+				"type":            "BM",
+				"name":            "metal-example",
+				"image":           "ubuntu-24.04",
+				"resource_name":   "bm-a100",
+				"region":          "us-central",
+				"bm_config":       map[string]any{"hostname": "metal-01"},
+				"project_id":      "proj-1",
+				"reservation_uid": "res-bm",
+				"ssh_keys":        []any{"ssh-1", "ssh-2"},
 			}
 			if !reflect.DeepEqual(body, want) {
 				t.Fatalf("body=%#v, want %#v", body, want)
@@ -39,10 +57,8 @@ func TestBareMetalRegisterExactWireContractAndHydration(t *testing.T) {
 			_ = json.NewEncoder(w).Encode(Workload{UID: "wrk-bm"})
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/workloads/wrk-bm"):
 			gets.Add(1)
-			_ = json.NewEncoder(w).Encode(Workload{
-				UID: "wrk-bm", Type: "BM", Name: "metal-example",
-				Region: "us-central", Hostname: "metal-01",
-			})
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(bareMetalWorkloadResponse))
 		default:
 			t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
 			w.WriteHeader(http.StatusNotFound)
@@ -51,14 +67,19 @@ func TestBareMetalRegisterExactWireContractAndHydration(t *testing.T) {
 
 	metal, err := c.BareMetal.Register(context.Background(), BareMetalCreateParams{
 		Name: "metal-example", Image: "ubuntu-24.04", ResourceName: "bm-a100",
-		Region: "us-central", Hostname: "metal-01", ProjectID: "proj-1",
+		Region: "us-central", BMConfig: &BMConfigInput{Hostname: "Metal-01"},
+		ProjectID: " proj-1 ", ReservationUID: "res-bm",
 		SSHKeys: []string{"ssh-1", "ssh-2"},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if metal.UID != "wrk-bm" || metal.Region != "us-central" ||
-		metal.Hostname != "metal-01" || metal.service != c.BareMetal {
+	if metal.UID != "wrk-bm" || metal.BMConfig == nil || metal.BMConfig.Region != "us-central" ||
+		metal.BMConfig.Hostname != "metal-01" || metal.service != c.BareMetal {
+		t.Fatalf("bare metal=%+v", metal)
+	}
+	if metal.ReservationUID == nil || *metal.ReservationUID != "res-bm" ||
+		metal.CreatedBy == nil || metal.CreatedBy.Email != "dev@example.com" || metal.VMConfig != nil {
 		t.Fatalf("bare metal=%+v", metal)
 	}
 	if posts.Load() != 1 || gets.Load() != 1 {
@@ -104,6 +125,11 @@ func TestBareMetalRegistrationValidationAndTypedSurface(t *testing.T) {
 			p.SSHKeys = nil
 			return p
 		}(), field: "ssh_keys"},
+		{name: "invalid hostname", params: func() BareMetalCreateParams {
+			p := base
+			p.BMConfig = &BMConfigInput{Hostname: "-metal"}
+			return p
+		}(), field: "bm_config.hostname"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -117,7 +143,7 @@ func TestBareMetalRegistrationValidationAndTypedSurface(t *testing.T) {
 
 	typ := reflect.TypeOf(BareMetalCreateParams{})
 	for _, field := range []string{
-		"Ports", "Envs", "Environment", "Commands", "RegistryAuth", "VMConfig",
+		"Ports", "Envs", "Environment", "Commands", "RegistryAuth", "VMConfig", "Hostname",
 	} {
 		if _, ok := typ.FieldByName(field); ok {
 			t.Errorf("BareMetalCreateParams must not expose %s", field)
@@ -239,7 +265,7 @@ func TestBareMetalReinstallValidation(t *testing.T) {
 		field  string
 	}{
 		{name: "missing image", params: BareMetalReinstallParams{SSHKeys: []string{"ssh-1"}}, field: "image"},
-		{name: "missing SSH keys", params: BareMetalReinstallParams{Image: "ubuntu"}, field: "ssh_keys"},
+		{name: "invalid hostname", params: BareMetalReinstallParams{Image: "ubuntu", Hostname: "bad_host"}, field: "hostname"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -249,6 +275,57 @@ func TestBareMetalReinstallValidation(t *testing.T) {
 				t.Fatalf("error=%T %v", err, err)
 			}
 		})
+	}
+}
+
+func TestBareMetalReinstallReusesAttachedKeysWhenOmitted(t *testing.T) {
+	c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodPost:
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatal(err)
+			}
+			if want := map[string]any{"image": "ubuntu-24.04"}; !reflect.DeepEqual(body, want) {
+				t.Fatalf("body=%#v, want %#v", body, want)
+			}
+			_ = json.NewEncoder(w).Encode(WorkloadOperationResponse{UID: "wrk-bm"})
+		default:
+			_ = json.NewEncoder(w).Encode(Workload{UID: "wrk-bm", Type: "BM"})
+		}
+	})
+	if _, err := c.BareMetal.Reinstall(context.Background(), "wrk-bm", BareMetalReinstallParams{Image: "ubuntu-24.04"}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestBareMetalImagesUsesBMImagesRoute(t *testing.T) {
+	c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/tha/v3/orgs/acme/workloads/bm-images" {
+			t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[{"name":"ubuntu-22.04-bm","display_name":"Ubuntu 22.04","os_family":"linux"}]`))
+	})
+	images, err := c.BareMetal.Images(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(images) != 1 || images[0].Name != "ubuntu-22.04-bm" || images[0].OSFamily != "linux" {
+		t.Fatalf("images=%+v", images)
+	}
+}
+
+func TestBareMetalDefaultWaitIsThirtyMinutes(t *testing.T) {
+	if DefaultBareMetalWaitTimeout != 30*time.Minute {
+		t.Fatalf("DefaultBareMetalWaitTimeout=%s", DefaultBareMetalWaitTimeout)
+	}
+	if got := bareMetalWait(WaitOptions{}); got.Timeout != 30*time.Minute {
+		t.Fatalf("default timeout=%s", got.Timeout)
+	}
+	explicit := WaitOptions{Timeout: time.Minute, PollInterval: time.Second, NoWait: true}
+	if got := bareMetalWait(explicit); got != explicit {
+		t.Fatalf("explicit wait changed: %+v", got)
 	}
 }
 

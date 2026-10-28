@@ -41,17 +41,25 @@ allows resource methods without storing credentials directly on the resource.
 
 ### Common workload service
 
-The common `Workloads` service is limited to operations valid for every
-workload type:
+The common `Workloads` service is limited to operations the API accepts for
+every workload type:
 
 - Get
 - List
 - Delete
 - Get state
 - List events
+- Wait until ready (polls state until `running` or a terminal state)
+- Verify (`POST /workloads/verify` with `{uid, digest}`)
+- Attach and detach SSH keys (`PUT`/`DELETE /workloads/{uid}/ssh-keys/{key}`)
 
-It does not create or deploy workloads and does not expose type-specific
-actions.
+It does not create, update, deploy, suspend, or exec workloads and does not
+expose type-specific actions.
+
+Common response models mirror the backend `Workload` and
+`WorkloadOperationResponse` shapes, including `reservation_uid`, `created_by`,
+`vm_config {hostname}`, and `bm_config {region, hostname}`. There are no
+top-level `region` or `hostname` fields.
 
 ### Typed services
 
@@ -109,14 +117,19 @@ VM registration accepts only VM-supported fields, including:
 - Name
 - VM image
 - Resource
-- Password
+- Optional `vm_config` (`VMConfigInput {hostname?}`, sent as
+  `vm_config.hostname`)
 - Optional project
 - Optional reservation
 - SSH keys
-- TCP/UDP ports
+- TCP/UDP ports (port 22 is reserved for SSH and rejected)
 
-VM methods are limited to routes supported for VM workloads, such as deploy,
-reboot, power operations, and reinstall.
+There is no VM password. Blank optional strings are omitted from the payload.
+
+VM methods are limited to routes the API supports for VM workloads: deploy,
+update (name and ports), reboot, logs, streamed logs, and VM images
+(`GET /workloads/vm-images`). Power on/off and reinstall are Bare Metal-only
+in the API and are not exposed on VMs.
 
 ### Bare Metal
 
@@ -127,13 +140,25 @@ Bare Metal registration accepts only Bare Metal-supported fields, including:
 - Resource
 - Region
 - At least one SSH key
-- Optional hostname
+- Optional `bm_config` (`BMConfigInput {hostname?}`, sent as
+  `bm_config.hostname`)
 - Optional project
+- Optional reservation
 
 Container commands, environment variables, registry credentials, and exposed
 container ports are not accepted.
 
-Bare Metal methods are limited to routes supported for Bare Metal workloads.
+Bare Metal methods are limited to routes the API supports for Bare Metal
+workloads: deploy, reboot (power cycle), power on, power off, reinstall (image
+required; SSH keys optional and reused when omitted; optional hostname), and
+Bare Metal images (`GET /workloads/bm-images`). Bare Metal `Create` and
+`Deploy` wait up to 30 minutes when the caller does not set a timeout.
+
+### Inventory
+
+Inventory accepts the current `vm` and `bm` types, a GPU filter, and a region
+filter (lowercase slug, at most 32 characters). The deprecated `rental`,
+`storage`, and `serverless` types fail validation before a request is sent.
 
 ### Sandbox
 
@@ -158,14 +183,26 @@ Remove from both Go and Python where present:
 
 - Rental workload type and defaults
 - Generic workload creation
+- Generic update
 - Generic deploy and type-specific mutation methods
 - Generic streamed workload exec
 - Suspend
+- VM password (`vm_config.password`); the API accepts only
+  `vm_config.hostname`
 - Volume clients and services
 - Volume models and workload volume fields
 - Volume attach/detach methods
 - Volume examples and exports
 - Request fields accepted only by deprecated container workload types
+- Deprecated `rental`, `storage`, and `serverless` inventory types
+
+Moved rather than removed, because the API rejects them for other workload
+types:
+
+- Workload logs and streamed logs → VM service (the API returns 501 for
+  non-VM workloads)
+- VM images → VM service
+- Reboot → VM and Bare Metal services
 
 The common response model retains only fields returned by current workload
 routes.
@@ -206,8 +243,21 @@ Workloads.Create + Workloads.Deploy
 Workloads.Create with type SANDBOX
   → Sandboxes.Create
 
-Workloads.Get/List/State/Events/Delete
+Workloads.Get/List/State/Events/Delete/WaitUntilReady/Verify
+Workloads.AttachSSHKey/DetachSSHKey
   → unchanged common Workloads operations
+
+VMConfig{Password}
+  → removed; use SSH keys and optional VMConfigInput{Hostname}
+
+Workloads.GetLogs/StreamLogs and Workloads.VMImages
+  → VMs.Logs/StreamLogs and VMs.Images
+
+Workloads.Reboot
+  → VMs.Reboot or BareMetal.Reboot
+
+Top-level Workload.Region/Hostname
+  → BMConfig.Region/Hostname or VMConfig.Hostname
 
 Volumes and workload volume attachment
   → removed; no current API equivalent
@@ -220,10 +270,18 @@ Examples must demonstrate fetched resources and consistent `Create` behavior.
 ### Contract tests
 
 - VM register, deploy, create, no-wait, and type mismatch
+- VM payload uses `vm_config.hostname` and never contains a password
+- VM logs, streamed logs, and `vm-images`
 - Bare Metal register, deploy, create, required region/SSH keys, and type
   mismatch
+- Bare Metal payload uses `bm_config.hostname` and `reservation_uid`
+- Bare Metal `bm-images` and the 30-minute default wait
 - Sandbox create behavior remains unchanged
-- Common workload reads handle VM, Bare Metal, and Sandbox responses
+- Common workload reads handle VM, Bare Metal, and Sandbox responses in the
+  backend shape (`reservation_uid`, `created_by`, `vm_config`, `bm_config`)
+- Common wait-until-ready, verify, and SSH key attach/detach routes
+- Inventory sends `type` (`vm`/`bm`), `gpu`, and `region`, and rejects
+  deprecated types
 - Deprecated workload types fail before network calls
 - Removed volume and legacy mutation symbols are not exported
 

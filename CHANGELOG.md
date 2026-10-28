@@ -19,6 +19,13 @@ Component releases use prefixed tags (`cli/vX.Y.Z`, `python/vX.Y.Z`, …).
   Sandbox services in Go, Python, and TypeScript.
 - Added consistent `Create` convenience operations and advanced
   `Register`/`Deploy` lifecycle operations for typed workloads.
+- Added `reservation_uid` and nested `vm_config.hostname` /
+  `bm_config.hostname` to typed VM and Bare Metal registration, and
+  `reservation_uid`, `created_by`, `vm_config`, and `bm_config` to common
+  workload responses.
+- Added VM `Logs`/`StreamLogs` (`get_logs`/`stream_logs`) and `Images`
+  (`vm-images`), and Bare Metal `Images` (`bm-images`) on the typed services.
+- Added a `region` filter and the current `vm`/`bm` types to inventory.
 - Added first-class Sandbox APIs to the Go, Python, and TypeScript SDKs.
 - Added fetched, client-bound `SandboxTemplate` resources with refresh, update,
   delete, and sandbox-creation methods.
@@ -35,8 +42,19 @@ Component releases use prefixed tags (`cli/vX.Y.Z`, `python/vX.Y.Z`, …).
 - Prepared coordinated `4.0.0-rc.1` releases for Go, Python, and TypeScript.
 - In Go and Python, generic workload creation now migrates to typed
   `VMs.Create`, `BareMetal.Create`, or `Sandboxes.Create` operations. Common
-  workload list, get, state, events, and delete operations remain available in
-  those SDKs. TypeScript currently exposes Sandbox only.
+  workload list, get, state, events, delete, wait-until-ready, verify, and SSH
+  key attach/detach remain available in those SDKs. TypeScript currently
+  exposes Sandbox only.
+- Moved workload logs and VM images from the common Workloads service to the
+  typed VM service, and workload reboot to the typed VM and Bare Metal
+  services, because the API rejects them for other workload types.
+- Bare Metal `Create`/`Deploy` wait up to 30 minutes by default.
+- Bare Metal reinstall SSH keys are optional; omitted keys reuse the attached
+  set.
+- Workload responses no longer have top-level `region` or `hostname`; read
+  `bm_config.region`, `bm_config.hostname`, or `vm_config.hostname`.
+- Python `VM` and `BareMetal` expose workload fields through explicit
+  read-only properties instead of attribute forwarding.
 - Clarified that organization discovery/management, personal API tokens, and
   inventory are user-scoped and organization-optional, while typed workloads,
   projects, SSH keys, members, service tokens, wallet, and credits are
@@ -56,8 +74,11 @@ Component releases use prefixed tags (`cli/vX.Y.Z`, `python/vX.Y.Z`, …).
   streaming-exec behavior.
 - Removed Rental and Volume APIs from Go and Python. They have no current v4
   replacement.
-- Removed generic workload mutation APIs in favor of the typed VM, Bare Metal,
-  and Sandbox services.
+- Removed generic workload mutation APIs (create, update, deploy, suspend,
+  exec) in favor of the typed VM, Bare Metal, and Sandbox services.
+- Removed the VM password (`vm_config.password`); the API accepts only
+  `vm_config.hostname`.
+- Removed the `rental`, `storage`, and `serverless` inventory types.
 
 ## [python/3.0.0] - 2026-07-27
 ### Added

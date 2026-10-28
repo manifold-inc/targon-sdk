@@ -799,7 +799,7 @@ func TestDefaultRequestTimeout(t *testing.T) {
 	defer c.Close()
 
 	start := time.Now()
-	_, err = c.Inventory.List(context.Background(), "", nil)
+	_, err = c.Inventory.List(context.Background(), InventoryListParams{})
 	if err == nil {
 		t.Fatal("expected timeout")
 	}

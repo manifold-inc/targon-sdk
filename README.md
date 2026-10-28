@@ -51,8 +51,12 @@ Package sources:
 
 In Go and Python, `Create` is the default operation: it registers, deploys,
 and optionally waits for a typed workload. Advanced Go and Python callers can
-use separate `Register` and `Deploy` operations. Common Workloads list, get,
-state, events, and delete operations are also Go/Python APIs.
+use separate `Register` and `Deploy` operations. The common Workloads service
+in Go and Python keeps operations every workload type supports: list, get,
+state, events, delete, wait-until-ready, image digest verification, and SSH
+key attach/detach. VM logs and VM images live on the VM service; Bare Metal
+images, power, and reinstall live on the Bare Metal service. VMs are created
+with SSH keys and an optional hostname; there is no VM password.
 
 TypeScript currently exposes Sandbox only. It does not expose VM, Bare Metal,
 the common Workloads service, or separate `Register`/`Deploy` operations.

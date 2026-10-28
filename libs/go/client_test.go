@@ -29,7 +29,38 @@ func testClient(t *testing.T, handler http.HandlerFunc) *Client {
 	return c
 }
 
-func TestInventoryList(t *testing.T) {
+// inventoryResponse is a /tha/v3/inventory row in the shape the backend
+// returns for current vm and bm resources.
+const inventoryResponse = `[
+  {
+    "name": "h100-small",
+    "display_name": "H100 Small",
+    "description": "1x H100",
+    "type": "vm",
+    "gpu": true,
+    "spec": {
+      "gpu_vendor": "nvidia", "gpu_model": "h100", "gpu_type": "H100", "gpu_count": 1,
+      "cpu_millicores": 16000, "memory_mib": 131072, "disk_size_mib": 512000,
+      "network_mode": "nat", "cc_enabled": true,
+      "vcpu": 16, "memory": 128, "storage": 500
+    },
+    "cost_per_hour": 2.5,
+    "available": 3
+  },
+  {
+    "name": "bm-h100-8x",
+    "display_name": "H100 8x Bare Metal",
+    "description": "8x H100",
+    "type": "bm",
+    "region": {"uid": "us-east", "display_name": "US East", "country": "US", "continent": "NA"},
+    "gpu": true,
+    "spec": {"gpu_count": 8, "cpu_sockets": 2, "memory_mib": 2097152},
+    "cost_per_hour": 20,
+    "available": 1
+  }
+]`
+
+func TestInventoryListSendsCurrentFiltersAndDecodesBackendShape(t *testing.T) {
 	c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/tha/v3/inventory" {
 			t.Errorf("path %s", r.URL.Path)
@@ -37,33 +68,63 @@ func TestInventoryList(t *testing.T) {
 		if got := r.Header.Get("Authorization"); got != "Bearer test-key" {
 			t.Errorf("auth %s", got)
 		}
-		if r.URL.Query().Get("type") != "rental" {
-			t.Errorf("type %s", r.URL.Query().Get("type"))
+		want := "gpu=true&region=us-east&type=bm"
+		if got := r.URL.Query().Encode(); got != want {
+			t.Errorf("query=%q, want %q", got, want)
 		}
-		_ = json.NewEncoder(w).Encode([]Inventory{{
-			Name:        CPUSmall,
-			DisplayName: "CPU Small",
-			Type:        "rental",
-			Available:   4,
-		}})
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(inventoryResponse))
 	})
-	items, err := c.Inventory.List(context.Background(), "rental", nil)
+	gpu := true
+	items, err := c.Inventory.List(context.Background(), InventoryListParams{
+		Type: " BM ", GPU: &gpu, Region: " US-East ",
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(items) != 1 || items[0].Name != CPUSmall {
-		t.Fatalf("%+v", items)
+	if len(items) != 2 || items[0].Name != H100Small || items[0].Spec.MemoryMiB != 131072 ||
+		items[0].Spec.CCEnabled == nil || !*items[0].Spec.CCEnabled || items[0].Region != nil {
+		t.Fatalf("vm item=%+v", items[0])
+	}
+	if items[1].Region == nil || items[1].Region.UID != "us-east" || items[1].Spec.GPUCount != 8 {
+		t.Fatalf("bm item=%+v", items[1])
 	}
 }
 
-func TestInventoryRejectsDeprecatedType(t *testing.T) {
+func TestInventoryAcceptsVMType(t *testing.T) {
+	c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if got := r.URL.Query().Get("type"); got != "vm" {
+			t.Errorf("type=%q", got)
+		}
+		_, _ = w.Write([]byte(`[]`))
+	})
+	if _, err := c.Inventory.Capacity(context.Background(), InventoryListParams{Type: "vm"}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestInventoryRejectsDeprecatedAndInvalidFilters(t *testing.T) {
 	c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
 		t.Fatal("should not call API")
 	})
-	_, err := c.Inventory.List(context.Background(), "serverless", nil)
-	var ve *ValidationError
-	if !errors.As(err, &ve) {
-		t.Fatalf("got %v", err)
+	for _, tt := range []struct {
+		params InventoryListParams
+		field  string
+		text   string
+	}{
+		{InventoryListParams{Type: "rental"}, "type", "deprecated"},
+		{InventoryListParams{Type: "storage"}, "type", "deprecated"},
+		{InventoryListParams{Type: "serverless"}, "type", "deprecated"},
+		{InventoryListParams{Type: "sandbox"}, "type", "one of vm, bm"},
+		{InventoryListParams{Type: "   "}, "type", "non-empty"},
+		{InventoryListParams{Region: "us_east"}, "region", "slug"},
+		{InventoryListParams{Region: strings.Repeat("a", 33)}, "region", "slug"},
+	} {
+		_, err := c.Inventory.List(context.Background(), tt.params)
+		var ve *ValidationError
+		if !errors.As(err, &ve) || ve.Field != tt.field || !strings.Contains(ve.Message, tt.text) {
+			t.Fatalf("params=%+v err=%v", tt.params, err)
+		}
 	}
 }
 

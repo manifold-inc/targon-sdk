@@ -2,6 +2,7 @@ package targon
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -13,12 +14,13 @@ type VMCreateParams struct {
 	Name           string
 	Image          string
 	ResourceName   string
-	Password       string
+	VMConfig       *VMConfigInput
 	ProjectID      string
 	ReservationUID string
 	SSHKeys        []string
-	Ports          []PortConfig
-	Wait           WaitOptions
+	// Ports are forwarded TCP/UDP ports. Port 22 is reserved for SSH.
+	Ports []PortConfig
+	Wait  WaitOptions
 }
 
 // VMUpdateParams contains the fields supported by the VM update route.
@@ -51,30 +53,45 @@ func (s *VMService) registrationPayload(params VMCreateParams) (map[string]any, 
 	if err != nil {
 		return nil, err
 	}
-	vmConfig, err := (VMConfig{Password: params.Password}).toPayload()
-	if err != nil {
-		return nil, err
-	}
 	payload := map[string]any{
 		"type":          "VM",
 		"name":          name,
 		"image":         image,
 		"resource_name": resourceName,
-		"vm_config":     vmConfig,
 	}
-	if params.ProjectID != "" {
-		payload["project_id"] = params.ProjectID
+	if params.VMConfig != nil {
+		vmConfig, err := hostnameConfig(params.VMConfig.Hostname, "vm_config.hostname")
+		if err != nil {
+			return nil, err
+		}
+		if vmConfig != nil {
+			payload["vm_config"] = vmConfig
+		}
 	}
-	if params.ReservationUID != "" {
-		payload["reservation_uid"] = params.ReservationUID
-	}
+	setOptionalString(payload, "project_id", params.ProjectID)
+	setOptionalString(payload, "reservation_uid", params.ReservationUID)
 	if len(params.SSHKeys) > 0 {
 		payload["ssh_keys"] = params.SSHKeys
 	}
 	if len(params.Ports) > 0 {
+		if err := validateVMPorts(params.Ports); err != nil {
+			return nil, err
+		}
 		payload["ports"] = params.Ports
 	}
 	return payload, nil
+}
+
+func validateVMPorts(ports []PortConfig) error {
+	for _, port := range ports {
+		if port.Port < 1 || port.Port > 65535 {
+			return validation("VM port must be between 1 and 65535", "ports", port.Port)
+		}
+		if port.Port == 22 {
+			return validation("VM port 22 is reserved for SSH and cannot be forwarded", "ports", port.Port)
+		}
+	}
+	return nil
 }
 
 func (s *VMService) Register(ctx context.Context, params VMCreateParams) (*VM, error) {
@@ -131,6 +148,9 @@ func (s *VMService) Update(ctx context.Context, workloadUID string, params VMUpd
 		payload["name"] = name
 	}
 	if params.Ports != nil {
+		if err := validateVMPorts(*params.Ports); err != nil {
+			return nil, err
+		}
 		payload["ports"] = *params.Ports
 	}
 	if len(payload) == 0 {
@@ -207,6 +227,29 @@ func (s *VMService) Logs(ctx context.Context, workloadUID string, options LogOpt
 	return s.client.getText(ctx, path, query)
 }
 
+// StreamLogs follows VM logs. The caller must close the returned reader.
+func (s *VMService) StreamLogs(ctx context.Context, workloadUID string, options LogOptions) (io.ReadCloser, error) {
+	workloadUID, err := requireNonEmpty(workloadUID, "workload_uid")
+	if err != nil {
+		return nil, err
+	}
+	path, err := s.client.Workloads.path(workloadUID, "logs")
+	if err != nil {
+		return nil, err
+	}
+	query, err := vmLogQuery(options)
+	if err != nil {
+		return nil, err
+	}
+	query.Set("follow", "true")
+	return s.client.stream(ctx, http.MethodGet, path, query)
+}
+
+// Images lists the images VM workloads can boot.
+func (s *VMService) Images(ctx context.Context) ([]VMImage, error) {
+	return s.client.Workloads.images(ctx, "vm-images")
+}
+
 func hydrateVM(service *VMService, workload *Workload) *VM {
 	if workload == nil {
 		return nil
@@ -274,4 +317,13 @@ func (v *VM) Logs(ctx context.Context, options LogOptions) (string, error) {
 		return "", err
 	}
 	return service.Logs(ctx, v.UID, options)
+}
+
+// StreamLogs follows this VM's logs. The caller must close the returned reader.
+func (v *VM) StreamLogs(ctx context.Context, options LogOptions) (io.ReadCloser, error) {
+	service, err := v.boundService()
+	if err != nil {
+		return nil, err
+	}
+	return service.StreamLogs(ctx, v.UID, options)
 }

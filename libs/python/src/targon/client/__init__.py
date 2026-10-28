@@ -1,13 +1,16 @@
 from targon.client.bare_metal import (
+    DEFAULT_BARE_METAL_WAIT_TIMEOUT,
     BareMetal,
     BareMetalClient,
     BareMetalCreateParams,
+    BareMetalImage,
     BareMetalReinstallParams,
 )
 from targon.client.client import Client
 from targon.client.inventory import (
     Inventory,
     InventoryClient,
+    InventoryRegion,
     InventorySpec,
 )
 from targon.client.member import (
@@ -72,12 +75,19 @@ from targon.client.token import (
     ServiceTokenListResponse,
     TokenCreator,
 )
-from targon.client.vm import VM, VMClient, VMCreateParams, VMUpdateParams
+from targon.client.vm import VM, VMClient, VMCreateParams, VMImage, VMUpdateParams
 from targon.client.workload import (
+    BMConfig,
+    BMConfigInput,
     PortConfig,
+    SshKeyAttachResponse,
+    VMConfig,
+    VMConfigInput,
     WorkloadClient,
+    WorkloadCreator,
     WorkloadEvent,
     WorkloadEventsResponse,
+    WorkloadImage,
     WorkloadListItem,
     WorkloadListResponse,
     WorkloadResource,
@@ -130,16 +140,26 @@ __all__ = [
     "WorkloadURL",
     "WorkloadEvent",
     "WorkloadEventsResponse",
+    "WorkloadCreator",
+    "WorkloadImage",
+    "SshKeyAttachResponse",
     # VM
     "VM",
     "VMClient",
     "VMCreateParams",
     "VMUpdateParams",
+    "VMConfig",
+    "VMConfigInput",
+    "VMImage",
     # Bare Metal
     "BareMetal",
     "BareMetalClient",
     "BareMetalCreateParams",
     "BareMetalReinstallParams",
+    "BMConfig",
+    "BMConfigInput",
+    "BareMetalImage",
+    "DEFAULT_BARE_METAL_WAIT_TIMEOUT",
     # ssh key
     "SshKeyClient",
     "SshKey",
@@ -171,5 +191,6 @@ __all__ = [
     # inventory
     "InventoryClient",
     "Inventory",
+    "InventoryRegion",
     "InventorySpec",
 ]

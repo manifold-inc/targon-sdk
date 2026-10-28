@@ -7,6 +7,9 @@ import (
 	"strings"
 )
 
+// terminalWorkloadStates are backend statuses that never transition to running.
+var terminalWorkloadStates = map[string]struct{}{"error": {}, "deleted": {}, "suspended": {}}
+
 type typedWorkloadService interface {
 	path(parts ...string) (string, error)
 	get(context.Context, string) (*Workload, error)
@@ -104,7 +107,7 @@ func waitTyped(
 			workload, err := getTyped(ctx, service, uid, expectedType)
 			return workload, true, err
 		}
-		if status == "error" || status == "deleted" || status == "suspended" {
+		if _, ok := terminalWorkloadStates[status]; ok {
 			return nil, false, typedStateError(uid, expectedType, state.Status, state.Message)
 		}
 		return nil, false, nil

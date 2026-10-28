@@ -9,11 +9,34 @@
 typed VM, Bare Metal, and Sandbox resources that consistently support
 register, deploy, and create.
 
-**Architecture:** Keep `Workloads` as a small common read/delete service.
-Expose `VMs`, `BareMetal`, and `Sandboxes` as typed services returning
-method-bearing resources that contain the shared workload response. `Create`
-is the high-level register/deploy/wait operation; `Register` and `Deploy`
-remain available for advanced callers.
+**Architecture:** Keep `Workloads` as a small common service for operations
+valid on every workload type: get, list, delete, state, events,
+wait-until-ready, verify, and SSH key attach/detach. Expose `VMs`,
+`BareMetal`, and `Sandboxes` as typed services returning method-bearing
+resources that contain the shared workload response. `Create` is the
+high-level register/deploy/wait operation; `Register` and `Deploy` remain
+available for advanced callers.
+
+> **Final-review corrections (applied after Task 11).** The task text below
+> has been updated to the corrected contract. Summary of what changed from the
+> first draft:
+>
+> - VM registration has no password. `VMConfigInput` is `{hostname?}` and is
+>   sent as `vm_config.hostname`.
+> - Bare Metal hostname is sent as `bm_config.hostname`; Bare Metal accepts
+>   `reservation_uid`; `Create`/`Deploy` default to a 30-minute wait;
+>   reinstall SSH keys are optional.
+> - Common responses carry `reservation_uid`, `created_by`, `vm_config`, and
+>   `bm_config`; there are no top-level `region`/`hostname` fields.
+> - Restored on common `Workloads`: `WaitUntilReady`, `Verify`,
+>   `AttachSSHKey`, `DetachSSHKey`.
+> - Restored on typed services: VM `Logs`, `StreamLogs`, `Images`
+>   (`vm-images`); Bare Metal `Images` (`bm-images`).
+> - Inventory accepts `vm`/`bm`, rejects `rental`/`storage`/`serverless`, and
+>   adds a `region` filter.
+> - VMs expose no power or reinstall methods; those routes are Bare
+>   Metal-only. Generic create/update/deploy/suspend/exec and all Volume and
+>   Rental APIs stay removed.
 
 **Tech Stack:** Go 1.24, Python 3.9+, `net/http`, `requests`, pytest, Go
 `httptest`, GitHub Actions.
@@ -95,6 +118,10 @@ type commonWorkloads interface {
 	Delete(context.Context, string) error
 	GetState(context.Context, string) (*WorkloadStateResponse, error)
 	GetEvents(context.Context, string, Page) (List[WorkloadEvent], error)
+	WaitUntilReady(context.Context, string, WaitOptions) (*WorkloadStateResponse, error)
+	Verify(context.Context, string, string) (bool, error)
+	AttachSSHKey(context.Context, string, string) (*SSHKeyAttachResponse, error)
+	DetachSSHKey(context.Context, string, string) error
 }
 ```
 
@@ -151,7 +178,9 @@ git commit -m "test: lock current workload types"
 **Interfaces:**
 - `Client.Volumes` is removed
 - `Workload` and `WorkloadListItem` no longer contain volume fields
-- `WorkloadService` contains only common read/delete/state/event methods
+- `WorkloadService` contains only operations valid for every workload type:
+  read, delete, state, events, wait-until-ready, verify, and SSH key
+  attach/detach
 
 - [ ] **Step 1: Add removal assertions**
 
@@ -190,8 +219,12 @@ WorkloadService.Deploy
 WorkloadService.Suspend
 WorkloadService.Exec and ExecStream
 WorkloadService.AttachVolume and DetachVolume
-WorkloadService.VMImages
 ```
+
+Move, rather than delete, the type-specific operations: `GetLogs`/`StreamLogs`
+and `VMImages` become VM service methods in Task 4, and `Reboot` becomes a VM
+and Bare Metal method. Keep `WaitUntilReady`, `Verify`, `AttachSSHKey`, and
+`DetachSSHKey` on `WorkloadService`; the API accepts them for every type.
 
 Keep common `Get`, `List`, `Update` only if update is moved to typed services
 within the same task; otherwise remove common `Update`.
@@ -311,15 +344,19 @@ git commit -m "refactor: share typed workload lifecycle"
 **Interfaces:**
 
 ```go
+type VMConfigInput struct {
+	Hostname string `json:"hostname,omitempty"`
+}
+
 type VMCreateParams struct {
 	Name           string
 	Image          string
 	ResourceName   string
-	Password       string
+	VMConfig       *VMConfigInput
 	ProjectID      string
 	ReservationUID string
 	SSHKeys        []string
-	Ports          []PortConfig
+	Ports          []PortConfig // port 22 is rejected
 	Wait           WaitOptions
 }
 
@@ -342,7 +379,12 @@ func (s *VMService) Get(context.Context, string) (*VM, error)
 func (s *VMService) Update(context.Context, string, VMUpdateParams) (*VM, error)
 func (s *VMService) Reboot(context.Context, string) (*VM, error)
 func (s *VMService) Logs(context.Context, string, LogOptions) (string, error)
+func (s *VMService) StreamLogs(context.Context, string, LogOptions) (io.ReadCloser, error)
+func (s *VMService) Images(context.Context) ([]VMImage, error)
 ```
+
+VMs do not expose power on/off or reinstall; the API supports those only for
+Bare Metal.
 
 - [ ] **Step 1: Add failing VM tests**
 
@@ -353,13 +395,15 @@ Assert exact create JSON:
   "type": "VM",
   "name": "vm-example",
   "image": "ubuntu-24.04",
-  "resource_name": "cpu-small",
-  "vm_config": {"password": "secret"}
+  "resource_name": "h100-small",
+  "vm_config": {"hostname": "vm-example"}
 }
 ```
 
-Cover password validation, update field restrictions, type mismatch,
-register-only, create/deploy/wait, and resource forwarding methods.
+Cover hostname validation, the absence of any password field, port 22
+rejection, blank optional field omission, update field restrictions, type
+mismatch, register-only, create/deploy/wait, logs, streamed logs, `vm-images`,
+and resource forwarding methods.
 
 - [ ] **Step 2: Run focused tests**
 
@@ -410,20 +454,25 @@ git commit -m "feat: add typed Go VM resources"
 **Interfaces:**
 
 ```go
+type BMConfigInput struct {
+	Hostname string `json:"hostname,omitempty"`
+}
+
 type BareMetalCreateParams struct {
-	Name         string
-	Image        string
-	ResourceName string
-	Region       string
-	Hostname     string
-	ProjectID    string
-	SSHKeys      []string
-	Wait         WaitOptions
+	Name           string
+	Image          string
+	ResourceName   string
+	Region         string
+	BMConfig       *BMConfigInput // sent as bm_config.hostname
+	ProjectID      string
+	ReservationUID string
+	SSHKeys        []string
+	Wait           WaitOptions // Timeout defaults to 30 minutes
 }
 
 type BareMetalReinstallParams struct {
-	Image   string
-	SSHKeys []string
+	Image    string
+	SSHKeys  []string // optional; attached keys are reused when empty
 	Hostname string
 }
 
@@ -440,6 +489,7 @@ func (s *BareMetalService) Reboot(context.Context, string) (*BareMetal, error)
 func (s *BareMetalService) PowerOn(context.Context, string) (*BareMetal, error)
 func (s *BareMetalService) PowerOff(context.Context, string) (*BareMetal, error)
 func (s *BareMetalService) Reinstall(context.Context, string, BareMetalReinstallParams) (*BareMetal, error)
+func (s *BareMetalService) Images(context.Context) ([]BareMetalImage, error)
 ```
 
 - [ ] **Step 1: Add failing Bare Metal tests**
@@ -558,19 +608,23 @@ git commit -m "refactor: remove deprecated Python workload APIs"
 
 ```python
 @dataclass(frozen=True)
+class VMConfigInput:
+    hostname: Optional[str] = None
+
+@dataclass(frozen=True)
 class VMCreateParams:
     name: str
     image: str
     resource_name: str
-    password: str
+    vm_config: Optional[VMConfigInput] = None
     project_id: Optional[str] = None
     reservation_uid: Optional[str] = None
     ssh_keys: Sequence[str] = ()
-    ports: Sequence[PortConfig] = ()
+    ports: Sequence[PortConfig] = ()  # port 22 is rejected
     wait_until_running: bool = True
 
 @dataclass(frozen=True)
-class VM:
+class VM(_WorkloadFields):  # explicit read-only properties, no __getattr__
     _client: Client
     workload: WorkloadResponse
 
@@ -581,12 +635,17 @@ class VMClient:
     def get(self, uid: str) -> VM: ...
     def update(self, uid: str, request: VMUpdateParams) -> VM: ...
     def reboot(self, uid: str) -> VM: ...
+    def get_logs(self, uid: str, *, since=None, tail=None, previous=False, log_type=None) -> str: ...
+    def stream_logs(self, uid: str, *, since=None, tail=None, previous=False, log_type=None) -> Iterator[str]: ...
+    def images(self) -> List[VMImage]: ...
 ```
 
 - [ ] **Step 1: Add failing VM payload/lifecycle tests**
 
-Cover register, create, no-wait, mismatched type, password validation, updates,
-reboot, and bound resource forwarding.
+Cover register, create, no-wait, mismatched type, `vm_config.hostname`
+payload and validation, no password field, port 22 rejection, blank optional
+field omission, updates, reboot, logs, streamed logs, `vm-images`, read-only
+properties, and bound resource forwarding.
 
 - [ ] **Step 2: Run focused tests**
 
@@ -645,25 +704,28 @@ class BareMetalCreateParams:
     resource_name: str
     region: str
     ssh_keys: Sequence[str]
-    hostname: Optional[str] = None
+    bm_config: Optional[BMConfigInput] = None  # sent as bm_config.hostname
     project_id: Optional[str] = None
+    reservation_uid: Optional[str] = None
     wait_until_running: bool = True
 
 class BareMetalClient:
     def register(self, params: BareMetalCreateParams) -> BareMetal: ...
-    def deploy(self, uid: str, *, wait=True, timeout=300, poll_interval=5) -> BareMetal: ...
-    def create(self, params: BareMetalCreateParams, *, timeout=300, poll_interval=5) -> BareMetal: ...
+    def deploy(self, uid: str, *, wait=True, timeout=1800, poll_interval=5) -> BareMetal: ...
+    def create(self, params: BareMetalCreateParams, *, timeout=1800, poll_interval=5) -> BareMetal: ...
     def get(self, uid: str) -> BareMetal: ...
     def reboot(self, uid: str) -> BareMetal: ...
     def power_on(self, uid: str) -> BareMetal: ...
     def power_off(self, uid: str) -> BareMetal: ...
     def reinstall(self, uid: str, request: BareMetalReinstallParams) -> BareMetal: ...
+    def images(self) -> List[BareMetalImage]: ...
 ```
 
 - [ ] **Step 1: Add failing Bare Metal tests**
 
-Test exact JSON, required fields, type mismatch, register/deploy/create,
-power/reboot/reinstall, and resource methods.
+Test exact JSON (`bm_config.hostname`, `reservation_uid`), required fields,
+type mismatch, register/deploy/create, the 30-minute default wait,
+power/reboot/reinstall (optional SSH keys), `bm-images`, and resource methods.
 
 - [ ] **Step 2: Run focused tests**
 
@@ -734,7 +796,10 @@ Preserve files, terminals, exec, freeze/thaw, fork, and publish behavior.
 - [ ] **Step 3: Rewrite Go and Python examples**
 
 Provide one VM, one Bare Metal, and one Sandbox lifecycle example per language.
-Examples must clean up created resources.
+Examples must clean up created resources, use the typed `Create` convenience
+(not `Register` + `Deploy`), never forward port 22, use valid resource
+constants such as `h100-small`, and take the Bare Metal region from
+`TARGON_REGION` or `bm` inventory.
 
 - [ ] **Step 4: Compile and syntax-check examples**
 
@@ -800,7 +865,9 @@ Register/Deploy.
 - [ ] **Step 3: Document removed APIs**
 
 State that Rental and Volume APIs are unavailable in v4 and have no current
-replacement.
+replacement. Document the VM password removal, the move of logs/VM images to
+the VM service and reboot to the typed services, and the replacement of
+top-level `region`/`hostname` with `vm_config`/`bm_config`.
 
 - [ ] **Step 4: Run docs verification**
 

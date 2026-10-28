@@ -19,8 +19,8 @@ vm = client.vms.create(
     VMCreateParams(
         name="my-vm",
         image="ubuntu-24.04",
-        resource_name=Resources.CPU_SMALL,
-        password="change-me",
+        resource_name=Resources.H100_SMALL,
+        ssh_keys=("ssh-key-uid",),
     )
 )
 ```
@@ -79,46 +79,67 @@ Use the typed client that matches the compute you are creating:
 ```python
 import os
 
-from targon import BareMetalCreateParams, Resources, VMCreateParams
+from targon import (
+    BareMetalCreateParams,
+    BMConfigInput,
+    PortConfig,
+    Resources,
+    VMConfigInput,
+    VMCreateParams,
+)
 
 vm = acme.vms.create(
     VMCreateParams(
         name="my-vm",
-        image="ubuntu-24.04",
-        resource_name="cpu-small",
-        password="change-me",
+        image="ubuntu-24.04",  # see acme.vms.images()
+        resource_name=Resources.H100_SMALL,
+        vm_config=VMConfigInput(hostname="my-vm"),
+        ssh_keys=("ssh-key-uid",),
+        # Port 22 is reserved for SSH and cannot be forwarded.
+        ports=(PortConfig(port=8080, protocol="TCP"),),
     )
 )
+
+# Bare Metal capacity is regional; pick a resource and region from inventory.
+capacity = acme.inventory.list(
+    inventory_type="bm", region=os.environ.get("TARGON_REGION")
+)[0]
 
 metal = acme.bare_metal.create(
     BareMetalCreateParams(
         name="gpu-host",
-        image="ubuntu-24.04",
-        resource_name=Resources.H100_SMALL,
-        region=os.environ["TARGON_REGION"],
-        ssh_keys=("key-uid",),
+        image="ubuntu-24.04",  # see acme.bare_metal.images()
+        resource_name=capacity.name,
+        region=capacity.region.uid,
+        ssh_keys=("ssh-key-uid",),
+        bm_config=BMConfigInput(hostname="gpu-host"),
     )
 )
 ```
 
-For advanced workflows, split creation into registration and deployment:
+VM registration accepts an optional `vm_config=VMConfigInput(hostname=...)`;
+there is no VM password. Bare Metal hostnames are sent as
+`bm_config.hostname`. Both accept an optional `reservation_uid`. Blank
+optional strings such as `project_id=""` are omitted from the request.
+`bare_metal.create()` and `bare_metal.deploy()` wait up to
+`DEFAULT_BARE_METAL_WAIT_TIMEOUT` (30 minutes) by default; VM and Sandbox
+waits default to 5 minutes.
 
-```python
-registered = acme.vms.register(
-    VMCreateParams(
-        name="my-vm",
-        image="ubuntu-24.04",
-        resource_name="cpu-small",
-        password="change-me",
-    )
-)
-vm = registered.deploy()
-```
+`VM` and `BareMetal` resources expose workload fields as read-only properties
+(`vm.uid`, `vm.state`, `vm.vm_config`, `metal.bm_config`, ...) and keep the
+full response on `.workload`.
 
-The legacy generic `client.workload.create()`/`deploy()` flow migrates to
-`client.vms.create()` or `client.bare_metal.create()`; Sandbox workloads
-migrate to `client.sandboxes.create()`. Rental and Volume APIs are unavailable
-in v4 and have no current replacement.
+Typed operations follow backend support:
+
+| Client | Operations |
+| --- | --- |
+| `client.vms` | `register`, `deploy`, `create`, `get`, `update`, `reboot`, `get_logs`, `stream_logs`, `images` |
+| `client.bare_metal` | `register`, `deploy`, `create`, `get`, `reboot`, `power_on`, `power_off`, `reinstall`, `images` |
+| `client.workload` | `get`, `list`, `delete`, `get_state`, `get_events`, `wait_until_ready`, `verify`, `attach_ssh_key`, `detach_ssh_key` |
+
+`client.inventory.list()` accepts `inventory_type` (`vm` or `bm`), `gpu`, and
+`region`. Deprecated `rental`, `storage`, and `serverless` types fail
+validation.
 
 Custom API hosts and transport options can be set on the root client:
 
@@ -193,8 +214,20 @@ form.
 
 - Replace generic workload creation and deployment with the typed VM, Bare
   Metal, or Sandbox clients shown above.
-- Common workload list, get, state, events, and delete operations remain on
-  `client.workload`.
+- Common workload list, get, state, events, delete, `wait_until_ready`,
+  `verify`, and SSH key attach/detach remain on `client.workload`.
+- `VmConfig(password=...)` was removed. VMs use SSH keys and an optional
+  `VMConfigInput(hostname=...)`.
+- `client.workload.get_logs()`/`stream_logs()` moved to
+  `client.vms.get_logs()`/`stream_logs()` because logs are VM-only.
+  `client.workload.vm_images()` moved to `client.vms.images()`; Bare Metal
+  images are `client.bare_metal.images()`.
+- `client.workload.reboot()` moved to `client.vms.reboot()` and
+  `client.bare_metal.reboot()`.
+- `WorkloadResponse.region`/`hostname` were replaced by
+  `vm_config.hostname` and `bm_config.region`/`bm_config.hostname`.
+- Generic `update`, `suspend`, `exec`, and `exec_stream` were removed. Sandbox
+  exec lives on `client.sandboxes`.
 - Organization discovery, personal API tokens, and inventory remain
   user-scoped and do not require an organization. Bind all other services to
   an organization with `client.for_org(...)`.
