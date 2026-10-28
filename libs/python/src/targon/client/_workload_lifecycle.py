@@ -4,7 +4,12 @@ import time
 from typing import TYPE_CHECKING, Any, Dict
 
 from targon.client.workload import WorkloadResponse, _validate_non_empty
-from targon.core.exceptions import HydrationError, TimeoutError, api_error
+from targon.core.exceptions import (
+    HydrationError,
+    TimeoutError,
+    ValidationError,
+    api_error,
+)
 
 if TYPE_CHECKING:
     from targon.client.client import Client
@@ -15,14 +20,22 @@ TERMINAL_WORKLOAD_STATES = frozenset({"error", "suspended", "deleted"})
 
 def require_type(
     uid: str,
-    workload_type: str,
-    expected_type: str,
+    workload_type: Any,
+    expected_type: Any,
 ) -> None:
-    if workload_type.strip().upper() == expected_type.strip().upper():
+    if not isinstance(expected_type, str) or not expected_type.strip():
+        raise ValidationError(
+            "expected workload type must be a non-empty string "
+            f"(expected {expected_type!r}, actual {workload_type!r})",
+            field="expected_type",
+            value=expected_type,
+        )
+    expected = expected_type.strip().upper()
+    if isinstance(workload_type, str) and workload_type.strip().upper() == expected:
         return
     raise api_error(
         502,
-        f"expected {expected_type} workload, got {workload_type!r}",
+        f"expected {expected!r} workload, got {workload_type!r}",
         reason="WORKLOAD_TYPE_MISMATCH",
         workload_uid=uid,
     )

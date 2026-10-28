@@ -5,6 +5,7 @@ from conftest import Response
 
 import targon
 import targon.client as client_exports
+from targon.client._workload_lifecycle import require_type
 from targon.client.workload import PortConfig
 from targon.core.exceptions import TargonAPIError
 from targon.core.exceptions import TimeoutError as TargonTimeoutError
@@ -159,6 +160,20 @@ def test_get_rejects_mismatched_workload_type(client):
     assert exc.value.workload_uid == "wrk-wrong"
 
 
+@pytest.mark.parametrize("workload_type", (None, 42))
+def test_get_rejects_null_or_non_string_workload_type(client, workload_type):
+    client.session.request.return_value = Response(
+        body={"uid": "wrk-wrong", "type": workload_type}
+    )
+
+    with pytest.raises(TargonAPIError) as exc:
+        client.vms.get("wrk-wrong")
+
+    assert exc.value.reason == "WORKLOAD_TYPE_MISMATCH"
+    assert "expected 'VM'" in str(exc.value)
+    assert f"got {workload_type!r}" in str(exc.value)
+
+
 def test_deploy_rejects_mismatched_state_type(client):
     client.sandbox_no_retry_session.request.return_value = Response(
         body={"uid": "wrk-vm"}
@@ -171,6 +186,38 @@ def test_deploy_rejects_mismatched_state_type(client):
         client.vms.deploy("wrk-vm", timeout=1, poll_interval=0)
 
     assert exc.value.reason == "WORKLOAD_TYPE_MISMATCH"
+
+
+@pytest.mark.parametrize("workload_type", (None, 42))
+def test_deploy_rejects_null_or_non_string_state_type(client, workload_type):
+    client.sandbox_no_retry_session.request.return_value = Response(
+        body={"uid": "wrk-vm"}
+    )
+    client.session.request.return_value = Response(
+        body={
+            "uid": "wrk-vm",
+            "workload_type": workload_type,
+            "status": "running",
+        }
+    )
+
+    with pytest.raises(TargonAPIError) as exc:
+        client.vms.deploy("wrk-vm", timeout=1, poll_interval=0)
+
+    assert exc.value.reason == "WORKLOAD_TYPE_MISMATCH"
+    assert "expected 'VM'" in str(exc.value)
+    assert f"got {workload_type!r}" in str(exc.value)
+
+
+@pytest.mark.parametrize("expected_type", (None, 42))
+def test_require_type_rejects_invalid_expected_discriminator(expected_type):
+    with pytest.raises(ValidationError) as exc:
+        require_type("wrk-vm", "VM", expected_type)
+
+    assert exc.value.field == "expected_type"
+    assert exc.value.value == expected_type
+    assert "'VM'" in str(exc.value)
+    assert repr(expected_type) in str(exc.value)
 
 
 def test_deploy_preserves_terminal_state_error_semantics(client):
