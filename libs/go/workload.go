@@ -19,8 +19,8 @@ const (
 
 var (
 	terminalWorkloadStates  = map[string]struct{}{"error": {}, "suspended": {}, "deleted": {}}
-	validWorkloadTypes      = map[string]struct{}{"RENTAL": {}, "VM": {}}
-	deprecatedWorkloadTypes = map[string]struct{}{"SERVERLESS": {}, "INFERENCE": {}, "FUNCTION": {}}
+	validWorkloadTypes      = map[string]struct{}{"VM": {}, "BM": {}, "SANDBOX": {}}
+	deprecatedWorkloadTypes = map[string]struct{}{"RENTAL": {}, "SERVERLESS": {}, "INFERENCE": {}, "FUNCTION": {}}
 	validLogTypes           = map[string]struct{}{"serial": {}, "qemu": {}}
 )
 
