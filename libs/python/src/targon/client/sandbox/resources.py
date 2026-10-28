@@ -98,6 +98,17 @@ class Sandbox:
     def refresh(self) -> "Sandbox":
         return self._client.sandboxes.get(self.uid)
 
+    def deploy(
+        self,
+        *,
+        wait: bool = True,
+        timeout: float = 300,
+        poll_interval: float = 5,
+    ) -> "Sandbox":
+        return self._client.sandboxes.deploy(
+            self.uid, **_wait_options(wait, timeout, poll_interval)
+        )
+
     def get_state(self) -> SandboxState:
         return self._client.sandboxes.get_state(self.uid)
 

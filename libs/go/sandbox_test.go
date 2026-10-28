@@ -56,6 +56,44 @@ func TestSandboxCreateWireContractAndNoPOSTRetry(t *testing.T) {
 	}
 }
 
+func TestSandboxRegisterAndResourceDeployLifecycle(t *testing.T) {
+	var registerCalls, deployCalls atomic.Int32
+	c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/tha/v3/orgs/acme/workloads":
+			registerCalls.Add(1)
+			_ = json.NewEncoder(w).Encode(Workload{UID: "wrk-lifecycle"})
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/workloads/wrk-lifecycle/deploy"):
+			deployCalls.Add(1)
+			_ = json.NewEncoder(w).Encode(WorkloadOperationResponse{UID: "wrk-lifecycle"})
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/workloads/wrk-lifecycle"):
+			_ = json.NewEncoder(w).Encode(Workload{
+				UID: "wrk-lifecycle", Type: "SANDBOX", Name: "lifecycle",
+			})
+		default:
+			t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
+		}
+	})
+
+	sandbox, err := c.Sandboxes.Register(context.Background(), SandboxCreateParams{
+		Name: "lifecycle", Template: readySandboxTemplate(c, "sbt-base"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if registerCalls.Load() != 1 || deployCalls.Load() != 0 {
+		t.Fatalf("register calls=%d deploy calls=%d", registerCalls.Load(), deployCalls.Load())
+	}
+
+	deployed, err := sandbox.Deploy(context.Background(), WaitOptions{NoWait: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deployed != sandbox || deployCalls.Load() != 1 {
+		t.Fatalf("deployed=%p sandbox=%p deploy calls=%d", deployed, sandbox, deployCalls.Load())
+	}
+}
+
 func TestSandboxValidation(t *testing.T) {
 	c := testClient(t, func(http.ResponseWriter, *http.Request) {
 		t.Fatal("validation should fail before HTTP")

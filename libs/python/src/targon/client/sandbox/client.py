@@ -1,5 +1,6 @@
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
+from targon.client._workload_lifecycle import register_workload
 from targon.client.constants import org_path
 from targon.client.sandbox.capabilities import (
     SandboxFilesClient,
@@ -140,13 +141,9 @@ class SandboxesClient(SandboxHTTPClient):
             poll_interval=poll_interval,
         )
 
-    def create(
-        self,
-        request: SandboxCreateParams,
-        *,
-        timeout: float = 300,
-        poll_interval: float = 5,
-    ) -> Sandbox:
+    def _registration_payload(
+        self, request: SandboxCreateParams
+    ) -> Dict[str, Any]:
         name = validate_name(request.name)
         if not isinstance(request.template, SandboxTemplate):
             raise invalid(
@@ -179,20 +176,56 @@ class SandboxesClient(SandboxHTTPClient):
                 sandbox_config=config or None,
             )
         )
-        created_uid = self._operation_uid(
-            self._request_no_retry("POST", self._workloads_path(), json=payload)
+        return payload
+
+    def register(self, request: SandboxCreateParams) -> Sandbox:
+        return self.get(
+            register_workload(
+                self.client,
+                self._registration_payload(request),
+                self._operation_uid,
+            )
         )
+
+    def deploy(
+        self,
+        workload_uid: str,
+        *,
+        wait: bool = True,
+        timeout: float = 300,
+        poll_interval: float = 5,
+    ) -> Sandbox:
+        workload_uid = non_empty(workload_uid, "workload_uid")
         self._request_no_retry(
             "POST",
-            self._workloads_path(created_uid, "deploy"),
-            workload_uid=created_uid,
+            self._workloads_path(workload_uid, "deploy"),
+            workload_uid=workload_uid,
         )
         return self._wait_or_get(
-            created_uid,
+            workload_uid,
             SandboxStatus.RUNNING,
-            request.wait_until_running,
+            wait,
             timeout,
             poll_interval,
+        )
+
+    def create(
+        self,
+        request: SandboxCreateParams,
+        *,
+        timeout: float = 300,
+        poll_interval: float = 5,
+    ) -> Sandbox:
+        workload_uid = register_workload(
+            self.client,
+            self._registration_payload(request),
+            self._operation_uid,
+        )
+        return self.deploy(
+            workload_uid,
+            wait=request.wait_until_running,
+            timeout=timeout,
+            poll_interval=poll_interval,
         )
 
     def get(self, workload_uid: str) -> Sandbox:

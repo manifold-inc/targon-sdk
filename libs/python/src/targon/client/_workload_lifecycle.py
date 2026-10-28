@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import time
-from typing import TYPE_CHECKING, Any, Dict
+from typing import TYPE_CHECKING, Any, Callable, Dict, Optional
 
 from targon.client.workload import WorkloadResponse, _validate_non_empty
 from targon.core.exceptions import (
@@ -50,13 +50,17 @@ def _operation_uid(data: Any) -> str:
     return data["uid"]
 
 
-def register_workload(client: "Client", payload: Dict[str, Any]) -> str:
+def register_workload(
+    client: "Client",
+    payload: Dict[str, Any],
+    operation_uid: Optional[Callable[[Any], str]] = None,
+) -> str:
     data = client.workload._request_no_retry(
         "POST",
         client.workload._path(),
         json=payload,
     )
-    return _operation_uid(data)
+    return (operation_uid or _operation_uid)(data)
 
 
 def get_typed(client: "Client", uid: str, expected_type: str) -> WorkloadResponse:

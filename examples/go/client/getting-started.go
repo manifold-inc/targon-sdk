@@ -21,38 +21,60 @@ func main() {
 	defer client.Close()
 
 	ctx := context.Background()
-	wl, err := client.Workloads.Create(ctx, targon.CreateWorkloadRequest{
-		Name:         "my-workload",
-		Image:        "nginx:latest",
+	if err := runVM(ctx, client); err != nil {
+		log.Fatal(err)
+	}
+	if err := runBareMetal(ctx, client); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func runVM(ctx context.Context, client *targon.Client) error {
+	vm, err := client.VMs.Register(ctx, targon.VMCreateParams{
+		Name:         "example-vm",
+		Image:        os.Getenv("TARGON_VM_IMAGE"),
 		ResourceName: targon.CPUSmall,
-		Ports:        []targon.PortConfig{{Port: 80}},
-		Envs:         []targon.EnvVar{{Name: "ENV", Value: "production"}},
+		Password:     os.Getenv("TARGON_VM_PASSWORD"),
+		Ports:        []targon.PortConfig{{Port: 22}},
 	})
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
-	fmt.Printf("Created workload %s (%s)\n", wl.UID, wl.Name)
+	defer deleteWorkload(ctx, client, vm.UID)
+	fmt.Printf("Registered VM %s\n", vm.UID)
 
-	deploy, err := client.Workloads.Deploy(ctx, wl.UID)
+	vm, err = vm.Deploy(ctx, targon.WaitOptions{Timeout: 5 * time.Minute})
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
-	fmt.Printf("Deploying workload %s...\n", deploy.UID)
+	fmt.Printf("VM %s is running\n", vm.UID)
+	return nil
+}
 
-	state, err := client.Workloads.WaitUntilReady(ctx, wl.UID, 5*time.Minute, 0)
+func runBareMetal(ctx context.Context, client *targon.Client) error {
+	metal, err := client.BareMetal.Register(ctx, targon.BareMetalCreateParams{
+		Name:         "example-bare-metal",
+		Image:        os.Getenv("TARGON_BM_IMAGE"),
+		ResourceName: os.Getenv("TARGON_BM_RESOURCE"),
+		Region:       os.Getenv("TARGON_REGION"),
+		SSHKeys:      []string{os.Getenv("TARGON_SSH_KEY_UID")},
+	})
 	if err != nil {
-		fmt.Printf("Workload did not become ready: %v\n", err)
-		return
+		return err
 	}
-	fmt.Printf("Status: %s (%d/%d ready)\n", state.Status, state.ReadyReplicas, state.TotalReplicas)
-	for _, u := range state.URLs {
-		fmt.Printf("  port %d -> %s\n", u.Port, u.URL)
-	}
+	defer deleteWorkload(ctx, client, metal.UID)
+	fmt.Printf("Registered Bare Metal %s\n", metal.UID)
 
-	logs, err := client.Workloads.GetLogs(ctx, wl.UID, targon.LogOptions{})
+	metal, err = metal.Deploy(ctx, targon.WaitOptions{Timeout: 30 * time.Minute})
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
-	fmt.Println("--- logs ---")
-	fmt.Println(logs)
+	fmt.Printf("Bare Metal %s is running\n", metal.UID)
+	return nil
+}
+
+func deleteWorkload(ctx context.Context, client *targon.Client, uid string) {
+	if err := client.Workloads.Delete(ctx, uid); err != nil {
+		log.Printf("cleanup %s: %v", uid, err)
+	}
 }

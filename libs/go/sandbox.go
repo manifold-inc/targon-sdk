@@ -60,11 +60,7 @@ func (s *SandboxesService) Create(ctx context.Context, params SandboxCreateParam
 	if err != nil {
 		return nil, err
 	}
-	workload, err := deployTyped(ctx, s.client, registered.UID, "SANDBOX", params.Wait)
-	if err != nil {
-		return nil, err
-	}
-	return hydrateSandbox(s, workload), nil
+	return s.Deploy(ctx, registered.UID, params.Wait)
 }
 
 func (s *SandboxesService) Register(ctx context.Context, params SandboxCreateParams) (*Sandbox, error) {

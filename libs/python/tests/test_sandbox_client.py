@@ -71,6 +71,61 @@ def test_create_deploys_and_waits_on_org_scoped_path(client):
     assert deploy_url.endswith("/workloads/wrk-1/deploy")
 
 
+def test_register_does_not_deploy(client):
+    client.sandbox_no_retry_session.request.return_value = Response(
+        body=sandbox_summary_body(status="registered")
+    )
+    client.session.request.return_value = Response(
+        body=sandbox_body(status="registered")
+    )
+
+    sandbox = client.sandboxes.register(
+        SandboxCreateParams(
+            name="devbox",
+            template=hydrated_template(client),
+        )
+    )
+
+    assert sandbox.uid == "wrk-1"
+    client.sandbox_no_retry_session.request.assert_called_once()
+    assert client.sandbox_no_retry_session.request.call_args.args[1].endswith(
+        "/workloads"
+    )
+
+
+def test_register_rejects_mismatched_operation_type(client):
+    client.sandbox_no_retry_session.request.return_value = Response(
+        body={"uid": "wrk-1", "type": "VM"}
+    )
+
+    with pytest.raises(ValidationError, match="not a SANDBOX"):
+        client.sandboxes.register(
+            SandboxCreateParams(
+                name="devbox",
+                template=hydrated_template(client),
+            )
+        )
+    client.session.request.assert_not_called()
+
+
+def test_resource_deploy_performs_one_deploy_call(client):
+    sandbox = client.sandboxes._hydrate(sandbox_body(status="registered"))
+    client.sandbox_no_retry_session.request.return_value = Response(
+        body=sandbox_summary_body(status="provisioning")
+    )
+    client.session.request.return_value = Response(
+        body=sandbox_body(status="provisioning")
+    )
+
+    deployed = sandbox.deploy(wait=False)
+
+    assert deployed.uid == sandbox.uid
+    client.sandbox_no_retry_session.request.assert_called_once()
+    assert client.sandbox_no_retry_session.request.call_args.args[1].endswith(
+        "/workloads/wrk-1/deploy"
+    )
+
+
 def test_create_can_return_without_waiting(client):
     client.sandbox_no_retry_session.request.side_effect = [
         Response(body=sandbox_summary_body(status="registered")),

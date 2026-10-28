@@ -59,6 +59,12 @@ func (s *Sandbox) Refresh(ctx context.Context) (*Sandbox, error) {
 	})
 }
 
+func (s *Sandbox) Deploy(ctx context.Context, wait WaitOptions) (*Sandbox, error) {
+	return s.mutate(func(service *SandboxesService, uid string) (*Sandbox, error) {
+		return service.Deploy(ctx, uid, wait)
+	})
+}
+
 func (s *Sandbox) GetState(ctx context.Context) (*WorkloadStateResponse, error) {
 	return sandboxCall(s, func(service *SandboxesService, uid string) (*WorkloadStateResponse, error) {
 		return service.GetState(ctx, uid)

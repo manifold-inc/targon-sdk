@@ -1,40 +1,39 @@
 import os
 
-import targon.client
-from targon import Resources
-from targon.client import CreateWorkloadRequest, PortConfig
-from targon.core.exceptions import TargonError, TimeoutError
+import targon
+from targon.client import PortConfig
 
-client = targon.client.Client.from_env(org=os.environ["TARGON_ORG"])
+client = targon.Client.from_env(org=os.environ["TARGON_ORG"])
 
 with client:
-    # Define the workload.
-    req = CreateWorkloadRequest(
-        name="my-workload",
-        image="nginx:latest",
-        resource_name=Resources.CPU_SMALL,
-        ports=[PortConfig(port=80)],
-        envs={"ENV": "production"},
-    )
-
-    wl = client.workload.create(req)
-    print(f"Created workload {wl.uid} ({wl.name})")
-
-    deploy = client.workload.deploy(wl.uid)
-    print(f"Deploying workload {deploy.uid}...")
-
-    try:
-        state = client.workload.wait_until_ready(wl.uid, timeout=300)
-    except (TargonError, TimeoutError) as e:
-        print(f"Workload did not become ready: {e}")
-    else:
-        print(
-            f"Status: {state.status} "
-            f"({state.ready_replicas}/{state.total_replicas} ready)"
+    vm = client.vms.register(
+        targon.VMCreateParams(
+            name="example-vm",
+            image=os.environ["TARGON_VM_IMAGE"],
+            resource_name=targon.Resources.CPU_SMALL,
+            password=os.environ["TARGON_VM_PASSWORD"],
+            ports=(PortConfig(port=22),),
         )
-        for url in state.urls:
-            print(f"  port {url.port} -> {url.url}")
+    )
+    try:
+        print(f"Registered VM {vm.uid}")
+        vm = vm.deploy(timeout=300)
+        print(f"VM {vm.uid} is running")
+    finally:
+        client.workload.delete(vm.uid)
 
-        # Stream logs (Ctrl-C to stop).
-        print("--- logs ---")
-        print(client.workload.get_logs(wl.uid))
+    metal = client.bare_metal.register(
+        targon.BareMetalCreateParams(
+            name="example-bare-metal",
+            image=os.environ["TARGON_BM_IMAGE"],
+            resource_name=os.environ["TARGON_BM_RESOURCE"],
+            region=os.environ["TARGON_REGION"],
+            ssh_keys=(os.environ["TARGON_SSH_KEY_UID"],),
+        )
+    )
+    try:
+        print(f"Registered Bare Metal {metal.uid}")
+        metal = metal.deploy(timeout=1800)
+        print(f"Bare Metal {metal.uid} is running")
+    finally:
+        client.workload.delete(metal.uid)
