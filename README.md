@@ -37,18 +37,35 @@ Build from source:
 make cli
 ```
 
-## Sandbox SDK
+## SDK v4
 
-The v4 release candidate exposes first-class Sandboxes in Go, Python, and
-TypeScript. Fetch a `READY` template resource, create a sandbox from it, then
-use the returned resource for exec, files, lifecycle operations, forks,
-publishing, and terminal sessions.
+The v4 release candidate exposes typed VM, Bare Metal, and Sandbox APIs. Go and
+Python provide all three typed workload services; TypeScript provides the
+Sandbox API.
 
 Package sources:
 
 - [Go](libs/go)
 - [Python](libs/python)
 - [TypeScript](libs/typescript)
+
+`Create` is the default operation: it registers, deploys, and optionally waits
+for a typed workload. Advanced callers can use the separate `Register` and
+`Deploy` operations. Common workload list, get, state, events, and delete
+operations remain available through the Workloads service.
+
+Migrate generic VM or Bare Metal creation to `VMs.Create` in Go /
+`client.vms.create()` in Python or `BareMetal.Create` in Go /
+`client.bare_metal.create()` in Python. Migrate Sandbox creation to
+`Sandboxes.Create`, `client.sandboxes.create()`, or
+`client.sandboxes.create()` in TypeScript.
+
+Organization discovery/management and personal API tokens are user-scoped.
+Typed workloads, projects, SSH keys, members, service tokens, wallet, and
+credits are organization-bound; use `ForOrg` in Go or `for_org` in Python to
+create an organization-bound client view.
+
+Rental and Volume APIs are unavailable in v4 and have no current replacement.
 
 See the package README in each directory, the
 [sandbox cookbook](cookbook/README.md), and the

@@ -13,6 +13,12 @@ Component releases use prefixed tags (`cli/vX.Y.Z`, `python/vX.Y.Z`, …).
 - Go request deadlines now come from the call context, and TypeScript applies
   operation-specific deadlines. Exec and file transfer are no longer cut off
   by the 30-second ordinary request timeout.
+
+### Added
+- Added typed VM and Bare Metal services to Go and Python, alongside the typed
+  Sandbox services in Go, Python, and TypeScript.
+- Added consistent `Create` convenience operations and advanced
+  `Register`/`Deploy` lifecycle operations for typed workloads.
 - Added first-class Sandbox APIs to the Go, Python, and TypeScript SDKs.
 - Added fetched, client-bound `SandboxTemplate` resources with refresh, update,
   delete, and sandbox-creation methods.
@@ -27,6 +33,12 @@ Component releases use prefixed tags (`cli/vX.Y.Z`, `python/vX.Y.Z`, …).
 
 ### Changed
 - Prepared coordinated `4.0.0-rc.1` releases for Go, Python, and TypeScript.
+- Generic workload creation now migrates to typed `VMs.Create`,
+  `BareMetal.Create`, or `Sandboxes.Create` operations. Common workload list,
+  get, state, events, and delete operations remain available.
+- Clarified that organization discovery/management and personal API tokens are
+  user-scoped, while typed workloads, projects, SSH keys, members, service
+  tokens, wallet, and credits are organization-bound.
 - Sandbox creation now requires a fetched `READY` `SandboxTemplate` resource;
   raw template UIDs are not accepted by the public create APIs.
 - Sandbox mutations do not retry automatically, preventing duplicate forks,
@@ -40,6 +52,10 @@ Component releases use prefixed tags (`cli/vX.Y.Z`, `python/vX.Y.Z`, …).
 ### Removed
 - Removed the legacy RENTAL-backed Python Sandbox shim and its workload
   streaming-exec behavior.
+- Removed Rental and Volume APIs from Go and Python. They have no current v4
+  replacement.
+- Removed generic workload mutation APIs in favor of the typed VM, Bare Metal,
+  and Sandbox services.
 
 ## [python/3.0.0] - 2026-07-27
 ### Added

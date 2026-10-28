@@ -11,18 +11,18 @@ pip install --pre "targon-sdk==4.0.0rc1"
 ## Quickstart
 
 ```python
-from targon import Client, Resources
-from targon.client import CreateWorkloadRequest
+from targon import Client, Resources, VMCreateParams
 
-client = Client.from_env()
+client = Client.from_env(org="acme")
 
-request = CreateWorkloadRequest(
-    name="my-workload",
-    image="nginx:latest",
-    resource_name=Resources.CPU_SMALL,
+vm = client.vms.create(
+    VMCreateParams(
+        name="my-vm",
+        image="ubuntu-24.04",
+        resource_name=Resources.CPU_SMALL,
+        password="change-me",
+    )
 )
-workload = client.workload.create(request)
-client.workload.deploy(workload.uid)
 ```
 
 The Python SDK uses the v3 organization-scoped API. Set credentials and an
@@ -45,32 +45,78 @@ Organization precedence is:
 2. `TARGON_ORG`
 3. The active profile selected with `targon org use <slug>`
 
-An organization is only required when an org-scoped client is used.
-Inventory, organization listing, and personal API tokens remain available
-without one.
+User-scoped services do not require an organization:
+
+- `client.orgs` for organization discovery and management
+- `client.api_tokens` for personal API tokens
+
+Typed workloads (`client.vms`, `client.bare_metal`, and `client.sandboxes`),
+projects, SSH keys, members, service tokens, wallet, and credits are
+organization-bound.
 
 ## Organizations and tokens
 
 ```python
-client.orgs.list()
-client.members.list(role="OWNER")
-wallet = client.wallet.get()
-credits = client.credits.get()
+orgs = client.orgs.list()
+acme = client.for_org("acme")
+members = acme.members.list()
+credits = acme.credits.get()
 
 # Personal token owned by the authenticated user.
 personal_token = client.api_tokens.create("laptop")
 
 # Service token owned by the selected organization.
-service_token = client.service_tokens.create("ci")
+service_token = acme.service_tokens.create("ci")
 ```
 
 For multi-organization applications, create an org-bound view without
 mutating the original client:
 
+## Typed workloads
+
+Use the typed client that matches the compute you are creating:
+
 ```python
-personal = client.for_org("personal")
-personal.workload.list()
+from targon import BareMetalCreateParams, VMCreateParams
+
+vm = acme.vms.create(
+    VMCreateParams(
+        name="my-vm",
+        image="ubuntu-24.04",
+        resource_name="cpu-small",
+        password="change-me",
+    )
+)
+
+metal = acme.bare_metal.create(
+    BareMetalCreateParams(
+        name="gpu-host",
+        image="ubuntu-24.04",
+        resource_name="h100",
+        region="us-central",
+        ssh_keys=("key-uid",),
+    )
+)
 ```
+
+For advanced workflows, split creation into registration and deployment:
+
+```python
+registered = acme.vms.register(
+    VMCreateParams(
+        name="my-vm",
+        image="ubuntu-24.04",
+        resource_name="cpu-small",
+        password="change-me",
+    )
+)
+vm = registered.deploy()
+```
+
+The legacy generic `client.workload.create()`/`deploy()` flow migrates to
+`client.vms.create()` or `client.bare_metal.create()`; Sandbox workloads
+migrate to `client.sandboxes.create()`. Rental and Volume APIs are unavailable
+in v4 and have no current replacement.
 
 Custom API hosts and transport options can be set on the root client:
 
@@ -141,14 +187,16 @@ The former direct resource aliases (`read_file`, `write_file`,
 above; use `client.sandboxes.create(SandboxCreateParams(...))` for the service
 form.
 
-## Migration from 0.1
+## Migration from v3
 
-- API calls now use `/tha/v3`.
-- Workloads, projects, volumes, SSH keys, wallet, credits, members, and
-  service tokens require an organization.
-- `client.user` and API-key rotation were removed. Use `client.wallet`,
-  `client.credits`, and `client.api_tokens`.
-- `VolumeClient.delete_deployment` was removed because v3 has no equivalent.
+- Replace generic workload creation and deployment with the typed VM, Bare
+  Metal, or Sandbox clients shown above.
+- Common workload list, get, state, events, and delete operations remain on
+  `client.workload`.
+- Organization discovery and personal API tokens remain user-scoped. Bind all
+  other services to an organization with `client.for_org(...)`.
+- Rental and Volume APIs, including volume attachment, were removed without a
+  replacement.
 
 ## Development
 

@@ -29,16 +29,22 @@ func main() {
 	defer client.Close()
 
 	ctx := context.Background()
-	workloads, err := client.Workloads.List(ctx, targon.ListWorkloadsParams{})
+	vm, err := client.VMs.Create(ctx, targon.VMCreateParams{
+		Name:         "my-vm",
+		Image:        "ubuntu-24.04",
+		ResourceName: targon.CPUSmall,
+		Password:     "change-me",
+	})
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Println("workloads", len(workloads.Items))
+	fmt.Println("created VM", vm.UID)
 }
 ```
 
-`Workloads` provides common read, state, event, and delete operations. Create
-and type-specific mutations are exposed by typed workload services.
+`VMs.Create`, `BareMetal.Create`, and `Sandboxes.Create` register, deploy, and
+optionally wait for a typed workload. `Workloads` remains the common service
+for list, state, events, and delete operations.
 
 The Go SDK uses the v3 organization-scoped API. Set credentials and an
 organization directly:
@@ -63,9 +69,78 @@ Organization precedence is:
 2. `TARGON_ORG`
 3. The active profile selected with `targon org use <slug>`
 
-An organization is only required when an org-scoped client is used.
-Inventory, organization listing, and personal API tokens remain available
-without one.
+User-scoped services do not require an organization:
+
+- `Orgs` for organization discovery and management
+- `APITokens` for personal API tokens
+
+Typed workloads (`VMs`, `BareMetal`, and `Sandboxes`), projects, SSH keys,
+members, service tokens, wallet, and credits are organization-bound. Use
+`ForOrg` to create an organization-bound view without mutating the original
+client:
+
+```go
+orgs, err := client.Orgs.List(ctx, targon.Page{})
+if err != nil {
+	log.Fatal(err)
+}
+fmt.Println("organizations", len(orgs.Items))
+
+acme, err := client.ForOrg("acme")
+if err != nil {
+	log.Fatal(err)
+}
+members, err := acme.Members.List(ctx, "", "", targon.Page{})
+if err != nil {
+	log.Fatal(err)
+}
+credits, err := acme.Credits.Get(ctx)
+if err != nil {
+	log.Fatal(err)
+}
+fmt.Println("members", len(members.Items), "credits", credits)
+```
+
+## Typed workloads
+
+Use the typed service that matches the compute you are creating:
+
+```go
+vm, err := client.VMs.Create(ctx, targon.VMCreateParams{
+	Name:         "my-vm",
+	Image:        "ubuntu-24.04",
+	ResourceName: targon.CPUSmall,
+	Password:     "change-me",
+})
+
+metal, err := client.BareMetal.Create(ctx, targon.BareMetalCreateParams{
+	Name:         "gpu-host",
+	Image:        "ubuntu-24.04",
+	ResourceName: "h100",
+	Region:       "us-central",
+	SSHKeys:      []string{"key-uid"},
+})
+```
+
+For advanced workflows, split creation into registration and deployment:
+
+```go
+registered, err := client.VMs.Register(ctx, targon.VMCreateParams{
+	Name:         "my-vm",
+	Image:        "ubuntu-24.04",
+	ResourceName: targon.CPUSmall,
+	Password:     "change-me",
+})
+if err != nil {
+	log.Fatal(err)
+}
+vm, err = registered.Deploy(ctx, targon.WaitOptions{})
+```
+
+The legacy generic `Workloads.Create`/`Workloads.Deploy` flow migrates to
+`VMs.Create` or `BareMetal.Create`; Sandbox workloads migrate to
+`Sandboxes.Create`. Rental and Volume APIs are unavailable in v4 and have no
+current replacement.
 
 ## Sandboxes
 
