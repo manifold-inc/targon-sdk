@@ -85,6 +85,8 @@ type Workload struct {
 	Image             string            `json:"image"`
 	Type              string            `json:"type"`
 	ResourceName      string            `json:"resource_name"`
+	Region            string            `json:"region"`
+	Hostname          string            `json:"hostname"`
 	ProjectID         *string           `json:"project_id"`
 	Ports             []PortConfig      `json:"ports"`
 	SSHKeys           []WorkloadSSHKey  `json:"ssh_keys"`
