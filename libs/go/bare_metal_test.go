@@ -79,6 +79,21 @@ func TestBareMetalRegistrationValidationAndTypedSurface(t *testing.T) {
 		params BareMetalCreateParams
 		field  string
 	}{
+		{name: "missing name", params: func() BareMetalCreateParams {
+			p := base
+			p.Name = ""
+			return p
+		}(), field: "name"},
+		{name: "missing image", params: func() BareMetalCreateParams {
+			p := base
+			p.Image = ""
+			return p
+		}(), field: "image"},
+		{name: "missing resource name", params: func() BareMetalCreateParams {
+			p := base
+			p.ResourceName = ""
+			return p
+		}(), field: "resource_name"},
 		{name: "missing region", params: func() BareMetalCreateParams {
 			p := base
 			p.Region = ""
