@@ -7,6 +7,7 @@ import (
 var (
 	validWorkloadTypes      = map[string]struct{}{"VM": {}, "BM": {}, "SANDBOX": {}}
 	deprecatedWorkloadTypes = map[string]struct{}{"RENTAL": {}, "SERVERLESS": {}, "INFERENCE": {}, "FUNCTION": {}}
+	validLogTypes           = map[string]struct{}{"serial": {}, "qemu": {}}
 )
 
 // PortConfig exposes a workload port.

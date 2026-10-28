@@ -15,6 +15,7 @@ type Client struct {
 
 	Inventory     *InventoryService
 	Workloads     *WorkloadService
+	VMs           *VMService
 	Sandboxes     *SandboxesService
 	SSHKeys       *SSHKeyService
 	Projects      *ProjectService
@@ -51,6 +52,7 @@ func NewFromEnv() (*Client, error) {
 func (c *Client) initServices() {
 	c.Inventory = &InventoryService{client: c}
 	c.Workloads = &WorkloadService{client: c}
+	c.VMs = &VMService{client: c}
 	c.Sandboxes = &SandboxesService{client: c}
 	c.Sandboxes.Templates = &SandboxTemplatesService{client: c}
 	c.Sandboxes.Files = &SandboxFilesService{sandboxes: c.Sandboxes}
