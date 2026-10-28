@@ -387,36 +387,6 @@ func TestSandboxResourceObjectMethods(t *testing.T) {
 	}
 }
 
-func TestPOSTRetryScope(t *testing.T) {
-	var calls atomic.Int32
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost || !strings.HasSuffix(r.URL.Path, "/deploy") {
-			t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
-		}
-		if calls.Add(1) == 1 {
-			w.WriteHeader(http.StatusServiceUnavailable)
-			_, _ = w.Write([]byte(`{"error":"retry","reason":"TEMPORARY"}`))
-			return
-		}
-		_ = json.NewEncoder(w).Encode(WorkloadOperationResponse{UID: "wrk-retry"})
-	}))
-	defer srv.Close()
-
-	c, err := New(Config{
-		APIKey: "test", Org: "acme", BaseURL: srv.URL, MaxRetries: 1, Timeout: 5 * time.Second,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer c.Close()
-	if _, err := c.Workloads.Deploy(context.Background(), "wrk-retry"); err != nil {
-		t.Fatalf("existing non-sandbox POST did not retain retries: %v", err)
-	}
-	if calls.Load() != 2 {
-		t.Fatalf("POST calls=%d, want 2", calls.Load())
-	}
-}
-
 func TestSandboxListAndTimeoutValidation(t *testing.T) {
 	c := testClient(t, func(http.ResponseWriter, *http.Request) {
 		t.Fatal("validation should fail before HTTP")

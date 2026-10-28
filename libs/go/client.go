@@ -16,7 +16,6 @@ type Client struct {
 	Inventory     *InventoryService
 	Workloads     *WorkloadService
 	Sandboxes     *SandboxesService
-	Volumes       *VolumeService
 	SSHKeys       *SSHKeyService
 	Projects      *ProjectService
 	Orgs          *OrgService
@@ -56,7 +55,6 @@ func (c *Client) initServices() {
 	c.Sandboxes.Templates = &SandboxTemplatesService{client: c}
 	c.Sandboxes.Files = &SandboxFilesService{sandboxes: c.Sandboxes}
 	c.Sandboxes.Terminals = &SandboxTerminalsService{sandboxes: c.Sandboxes}
-	c.Volumes = &VolumeService{client: c}
 	c.SSHKeys = &SSHKeyService{client: c}
 	c.Projects = &ProjectService{client: c}
 	c.Orgs = &OrgService{client: c}

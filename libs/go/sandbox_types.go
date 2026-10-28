@@ -132,18 +132,17 @@ type ListSandboxesParams struct {
 // SandboxSummary is the intentionally sparse workload-list representation.
 // Call Sandboxes.Get with UID to obtain a method-bearing full Sandbox.
 type SandboxSummary struct {
-	UID               string                `json:"uid"`
-	Name              string                `json:"name"`
-	Image             string                `json:"image"`
-	Type              string                `json:"type"`
-	State             *WorkloadState        `json:"state"`
-	Resource          *WorkloadResource     `json:"resource"`
-	CostPerHour       *float64              `json:"cost_per_hour"`
-	FrozenCostPerHour *float64              `json:"frozen_cost_per_hour,omitempty"`
-	Revision          string                `json:"revision"`
-	Volumes           []WorkloadVolumeMount `json:"volumes"`
-	CreatedAt         string                `json:"created_at"`
-	UpdatedAt         string                `json:"updated_at"`
+	UID               string            `json:"uid"`
+	Name              string            `json:"name"`
+	Image             string            `json:"image"`
+	Type              string            `json:"type"`
+	State             *WorkloadState    `json:"state"`
+	Resource          *WorkloadResource `json:"resource"`
+	CostPerHour       *float64          `json:"cost_per_hour"`
+	FrozenCostPerHour *float64          `json:"frozen_cost_per_hour,omitempty"`
+	Revision          string            `json:"revision"`
+	CreatedAt         string            `json:"created_at"`
+	UpdatedAt         string            `json:"updated_at"`
 }
 
 type ListSandboxTemplatesParams struct {

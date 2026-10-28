@@ -29,20 +29,16 @@ func main() {
 	defer client.Close()
 
 	ctx := context.Background()
-	wl, err := client.Workloads.Create(ctx, targon.CreateWorkloadRequest{
-		Name:         "my-workload",
-		Image:        "nginx:latest",
-		ResourceName: targon.CPUSmall,
-	})
+	workloads, err := client.Workloads.List(ctx, targon.ListWorkloadsParams{})
 	if err != nil {
 		log.Fatal(err)
 	}
-	if _, err := client.Workloads.Deploy(ctx, wl.UID); err != nil {
-		log.Fatal(err)
-	}
-	fmt.Println("created", wl.UID)
+	fmt.Println("workloads", len(workloads.Items))
 }
 ```
+
+`Workloads` provides common read, state, event, and delete operations. Create
+and type-specific mutations are exposed by typed workload services.
 
 The Go SDK uses the v3 organization-scoped API. Set credentials and an
 organization directly:

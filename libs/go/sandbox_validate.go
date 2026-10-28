@@ -34,6 +34,17 @@ func validateDisplayName(displayName string) error {
 	return nil
 }
 
+func requireAbsolutePath(value, field string) (string, error) {
+	path, err := requireNonEmpty(value, field)
+	if err != nil {
+		return "", err
+	}
+	if !strings.HasPrefix(path, "/") {
+		return "", validation(field+" must be an absolute path starting with '/'", field, value)
+	}
+	return path, nil
+}
+
 func validateTerminalID(terminalID string) error {
 	if !terminalIDPattern.MatchString(strings.TrimSpace(terminalID)) {
 		return validation("terminal_id must be 1-64 letters, digits, '.', '_', or '-'", "terminal_id", terminalID)
