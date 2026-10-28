@@ -102,6 +102,10 @@ func (s *SandboxesService) registrationPayload(params SandboxCreateParams) (map[
 	if err := validateSandboxConfigForCreate(params.SandboxConfig); err != nil {
 		return nil, err
 	}
+	sshKeys, err := normalizeSSHKeys(params.SSHKeys)
+	if err != nil {
+		return nil, err
+	}
 	payload := map[string]any{
 		"type":  "SANDBOX",
 		"name":  params.Name,
@@ -110,8 +114,8 @@ func (s *SandboxesService) registrationPayload(params SandboxCreateParams) (map[
 	if params.ProjectID != "" {
 		payload["project_id"] = params.ProjectID
 	}
-	if params.SSHKeys != nil {
-		payload["ssh_keys"] = params.SSHKeys
+	if sshKeys != nil {
+		payload["ssh_keys"] = sshKeys
 	}
 	if params.Ports != nil {
 		payload["ports"] = normalizedSandboxPorts(params.Ports)
@@ -218,7 +222,11 @@ func (s *SandboxesService) Update(ctx context.Context, workloadUID string, param
 		payload["project_id"] = *params.ProjectID
 	}
 	if params.SSHKeys != nil {
-		payload["ssh_keys"] = *params.SSHKeys
+		sshKeys, err := normalizeSSHKeys(*params.SSHKeys)
+		if err != nil {
+			return nil, err
+		}
+		payload["ssh_keys"] = sshKeys
 	}
 	if params.Ports != nil {
 		if err := validateSandboxPorts(*params.Ports); err != nil {

@@ -46,6 +46,10 @@ func main() {
 optionally wait for a typed workload. `Workloads` remains the common service
 for operations every workload type supports: get, list, state, events,
 `WaitUntilReady`, `Verify`, SSH key attach/detach, and delete.
+`WaitUntilReady` fails only on `error`, `suspended`, and `deleted`; `stopped`
+and `frozen` can still transition, so it keeps waiting. `SSHKeys` entries must
+be non-empty SSH key UIDs; blank entries fail validation before any request and
+surrounding whitespace is trimmed.
 
 The Go SDK uses the v3 organization-scoped API. Set credentials and an
 organization directly:

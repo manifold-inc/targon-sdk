@@ -324,6 +324,55 @@ def test_sandbox_ports_reject_sctp(client):
     client.sandbox_no_retry_session.request.assert_not_called()
 
 
+@pytest.mark.parametrize(
+    "ssh_keys",
+    (
+        "key-1",
+        b"key-1",
+        {"key-1"},
+        (key for key in ("key-1",)),
+        ("key-1", " "),
+        ("key-1", ""),
+        (1,),
+    ),
+)
+def test_create_and_update_reject_malformed_ssh_keys(client, ssh_keys):
+    with pytest.raises(ValidationError) as exc:
+        client.sandboxes.create(
+            SandboxCreateParams(
+                name="valid",
+                template=hydrated_template(client),
+                ssh_keys=ssh_keys,
+            )
+        )
+    assert exc.value.field == "ssh_keys"
+    with pytest.raises(ValidationError) as exc:
+        client.sandboxes.update("wrk-1", SandboxUpdateParams(ssh_keys=ssh_keys))
+    assert exc.value.field == "ssh_keys"
+    client.session.request.assert_not_called()
+    client.sandbox_no_retry_session.request.assert_not_called()
+
+
+def test_register_sends_trimmed_ssh_keys_as_list(client):
+    client.sandbox_no_retry_session.request.return_value = Response(
+        body=sandbox_summary_body(status="registered")
+    )
+    client.session.request.return_value = Response(
+        body=sandbox_body(status="registered")
+    )
+
+    client.sandboxes.register(
+        SandboxCreateParams(
+            name="devbox",
+            template=hydrated_template(client),
+            ssh_keys=(" key-1 ", "key-2"),
+        )
+    )
+
+    payload = client.sandbox_no_retry_session.request.call_args.kwargs["json"]
+    assert payload["ssh_keys"] == ["key-1", "key-2"]
+
+
 def test_update_rejects_zero_idle_timeout_but_create_and_fork_allow_it(client):
     zero_idle = SandboxConfigInput(idle_timeout_sec=0)
     with pytest.raises(ValidationError, match="must be positive"):

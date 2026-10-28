@@ -114,8 +114,35 @@ func TestWorkloadWaitUntilReadyTerminalAndTimeout(t *testing.T) {
 	}
 }
 
-func TestWaitTreatsStoppedAndFrozenAsTerminal(t *testing.T) {
+func TestWaitContinuesThroughStoppedAndFrozen(t *testing.T) {
 	for _, status := range []string{"stopped", "frozen", "Frozen"} {
+		var calls atomic.Int32
+		c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+			if strings.HasSuffix(r.URL.Path, "/state") {
+				next := status
+				if calls.Add(1) > 1 {
+					next = "running"
+				}
+				_ = json.NewEncoder(w).Encode(WorkloadStateResponse{UID: "wrk-1", WorkloadType: "VM", Status: next})
+				return
+			}
+			_ = json.NewEncoder(w).Encode(Workload{UID: "wrk-1", Type: "VM"})
+		})
+		options := WaitOptions{Timeout: time.Second, PollInterval: time.Millisecond}
+		state, err := c.Workloads.WaitUntilReady(context.Background(), "wrk-1", options)
+		if err != nil || state.Status != "running" || calls.Load() != 2 {
+			t.Fatalf("WaitUntilReady status=%s state=%+v err=%v calls=%d", status, state, err, calls.Load())
+		}
+		calls.Store(0)
+		workload, err := waitTyped(context.Background(), c, "wrk-1", "VM", "running", options)
+		if err != nil || workload.UID != "wrk-1" || calls.Load() != 2 {
+			t.Fatalf("waitTyped status=%s workload=%+v err=%v calls=%d", status, workload, err, calls.Load())
+		}
+	}
+}
+
+func TestWaitUntilReadyKeepsErrorSuspendedDeletedTerminal(t *testing.T) {
+	for _, status := range []string{"error", "suspended", "deleted", "Deleted"} {
 		var calls atomic.Int32
 		c := testClient(t, func(w http.ResponseWriter, _ *http.Request) {
 			calls.Add(1)
@@ -126,10 +153,6 @@ func TestWaitTreatsStoppedAndFrozenAsTerminal(t *testing.T) {
 		var apiErr *APIError
 		if !errors.As(err, &apiErr) || apiErr.Reason != "WORKLOAD_INVALID_STATE" || calls.Load() != 1 {
 			t.Fatalf("WaitUntilReady status=%s err=%v calls=%d", status, err, calls.Load())
-		}
-		_, err = waitTyped(context.Background(), c, "wrk-1", "VM", "running", options)
-		if !errors.As(err, &apiErr) || apiErr.Reason != "WORKLOAD_INVALID_STATE" {
-			t.Fatalf("waitTyped status=%s err=%v", status, err)
 		}
 	}
 }

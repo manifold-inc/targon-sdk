@@ -60,7 +60,11 @@ func (s *BareMetalService) registrationPayload(params BareMetalCreateParams) (ma
 	if err != nil {
 		return nil, err
 	}
-	if len(params.SSHKeys) == 0 {
+	sshKeys, err := normalizeSSHKeys(params.SSHKeys)
+	if err != nil {
+		return nil, err
+	}
+	if len(sshKeys) == 0 {
 		return nil, validation("at least one SSH key is required", "ssh_keys", params.SSHKeys)
 	}
 	payload := map[string]any{
@@ -69,7 +73,7 @@ func (s *BareMetalService) registrationPayload(params BareMetalCreateParams) (ma
 		"image":         image,
 		"resource_name": resourceName,
 		"region":        region,
-		"ssh_keys":      params.SSHKeys,
+		"ssh_keys":      sshKeys,
 	}
 	if params.BMConfig != nil {
 		bmConfig, err := hostnameConfig(params.BMConfig.Hostname, "bm_config.hostname")
@@ -172,8 +176,12 @@ func (s *BareMetalService) Reinstall(
 		return nil, err
 	}
 	payload := map[string]any{"image": image}
-	if len(params.SSHKeys) > 0 {
-		payload["ssh_keys"] = params.SSHKeys
+	sshKeys, err := normalizeSSHKeys(params.SSHKeys)
+	if err != nil {
+		return nil, err
+	}
+	if len(sshKeys) > 0 {
+		payload["ssh_keys"] = sshKeys
 	}
 	hostname, err := hostnameConfig(params.Hostname, "hostname")
 	if err != nil {

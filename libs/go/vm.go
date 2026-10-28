@@ -70,8 +70,12 @@ func (s *VMService) registrationPayload(params VMCreateParams) (map[string]any, 
 	}
 	setOptionalString(payload, "project_id", params.ProjectID)
 	setOptionalString(payload, "reservation_uid", params.ReservationUID)
-	if len(params.SSHKeys) > 0 {
-		payload["ssh_keys"] = params.SSHKeys
+	sshKeys, err := normalizeSSHKeys(params.SSHKeys)
+	if err != nil {
+		return nil, err
+	}
+	if len(sshKeys) > 0 {
+		payload["ssh_keys"] = sshKeys
 	}
 	if len(params.Ports) > 0 {
 		ports, err := normalizeVMPorts(params.Ports)

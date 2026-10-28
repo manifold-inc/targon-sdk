@@ -316,7 +316,20 @@ def test_wait_until_ready_terminal_and_timeout(client):
 
 
 @pytest.mark.parametrize("status", ("stopped", "frozen", "Frozen"))
-def test_wait_until_ready_treats_stopped_and_frozen_as_terminal(client, status):
+def test_wait_until_ready_continues_through_stopped_and_frozen(client, status):
+    client.session.request.side_effect = [
+        Response(body={"uid": "wrk-1", "workload_type": "VM", "status": status}),
+        Response(body={"uid": "wrk-1", "workload_type": "VM", "status": "running"}),
+    ]
+
+    state = client.workload.wait_until_ready("wrk-1", timeout=1, poll_interval=0)
+
+    assert state.status == "running"
+    assert client.session.request.call_count == 2
+
+
+@pytest.mark.parametrize("status", ("error", "suspended", "deleted", "Deleted"))
+def test_wait_until_ready_keeps_error_suspended_deleted_terminal(client, status):
     client.session.request.return_value = Response(
         body={"uid": "wrk-1", "workload_type": "VM", "status": status}
     )
@@ -343,10 +356,12 @@ def test_wait_typed_target_is_checked_before_terminal_states(client):
     assert workload.uid == "wrk-1"
     assert client.session.request.call_count == 2
 
-    client.session.request.side_effect = None
-    client.session.request.return_value = Response(
-        body={"uid": "wrk-1", "workload_type": "VM", "status": "stopped"}
-    )
+    client.session.request.reset_mock()
+    client.session.request.side_effect = [
+        Response(body={"uid": "wrk-1", "workload_type": "VM", "status": "stopped"}),
+        Response(body={"uid": "wrk-1", "workload_type": "VM", "status": "error"}),
+    ]
     with pytest.raises(TargonAPIError) as exc:
         wait_typed(client, "wrk-1", "VM", target="frozen", timeout=1, poll_interval=0)
     assert exc.value.reason == "WORKLOAD_INVALID_STATE"
+    assert client.session.request.call_count == 2

@@ -39,6 +39,15 @@ Component releases use prefixed tags (`cli/vX.Y.Z`, `python/vX.Y.Z`, …).
 - Added mock-backed Sandbox regression suites in all three SDKs.
 
 ### Changed
+- Python `ssh_keys` on VM, Bare Metal, and Sandbox create/update params must be
+  a sequence (tuple or list) of non-empty SSH key UID strings. Bare strings,
+  bytes, sets, generators, and blank or non-string entries are rejected with a
+  `ValidationError` before any request, instead of being split into
+  characters. Go VM, Bare Metal, and Sandbox create/update reject blank SSH key
+  UIDs and trim surrounding whitespace.
+- Common `wait_until_ready` / `WaitUntilReady` fails only on `error`,
+  `suspended`, and `deleted`. `stopped` and `frozen` are not terminal because
+  they can transition later; Sandbox target-specific waits are unchanged.
 - Prepared coordinated `4.0.0-rc.1` releases for Go, Python, and TypeScript.
 - In Go and Python, generic workload creation now migrates to typed
   `VMs.Create`, `BareMetal.Create`, or `Sandboxes.Create` operations. Common

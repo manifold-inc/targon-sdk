@@ -14,9 +14,10 @@ from targon.core.exceptions import (
 )
 from targon.core.objects import BaseHTTPClient
 
-TERMINAL_WORKLOAD_STATES = frozenset(
-    {"error", "suspended", "deleted", "stopped", "frozen"}
-)
+# Statuses that fail common waits. ``stopped`` and ``frozen`` are deliberately
+# excluded: they can transition later (start/thaw). Typed waits check their
+# requested target before this set.
+TERMINAL_WORKLOAD_STATES = frozenset({"error", "suspended", "deleted"})
 
 _HOSTNAME_RE = re.compile(
     r"^[a-z0-9]([a-z0-9\-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9\-]{0,61}[a-z0-9])?)*$"

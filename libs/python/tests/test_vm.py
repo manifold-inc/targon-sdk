@@ -119,6 +119,8 @@ def test_vm_params_have_no_password():
         ({"ssh_keys": b"ssh-key-uid"}, "ssh_keys"),
         ({"ssh_keys": ("ssh-key-uid", "")}, "ssh_keys"),
         ({"ssh_keys": (42,)}, "ssh_keys"),
+        ({"ssh_keys": {"ssh-key-uid"}}, "ssh_keys"),
+        ({"ssh_keys": (k for k in ("ssh-key-uid",))}, "ssh_keys"),
         ({"project_id": 42}, "project_id"),
     ),
 )
@@ -175,19 +177,19 @@ def test_update_rejects_invalid_ports(client):
 
 
 @pytest.mark.parametrize("status", ("stopped", "frozen"))
-def test_deploy_treats_stopped_and_frozen_as_terminal(client, status):
+def test_deploy_continues_through_stopped_and_frozen(client, status):
     client.sandbox_no_retry_session.request.return_value = Response(
         body={"uid": "wrk-vm"}
     )
-    client.session.request.return_value = Response(
-        body={"uid": "wrk-vm", "workload_type": "VM", "status": status}
-    )
+    client.session.request.side_effect = [
+        Response(body={"uid": "wrk-vm", "workload_type": "VM", "status": status}),
+        Response(body={"uid": "wrk-vm", "workload_type": "VM", "status": "running"}),
+        Response(body={"uid": "wrk-vm", "type": "VM", "name": "vm"}),
+    ]
 
-    with pytest.raises(TargonAPIError) as exc:
-        client.vms.deploy("wrk-vm", timeout=1, poll_interval=0)
+    vm = client.vms.deploy("wrk-vm", timeout=1, poll_interval=0)
 
-    assert exc.value.reason == "WORKLOAD_INVALID_STATE"
-    assert status in str(exc.value)
+    assert vm.uid == "wrk-vm"
 
 
 def test_update_rejects_ssh_port(client):

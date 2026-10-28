@@ -49,7 +49,7 @@ every workload type:
 - Delete
 - Get state
 - List events
-- Wait until ready (polls state until `running` or a terminal state)
+- Wait until ready (polls state until `running`; fails on `error`, `suspended`, or `deleted`; `stopped`/`frozen` can still transition and keep waiting)
 - Verify (`POST /workloads/verify` with `{uid, digest}`)
 - Attach and detach SSH keys (`PUT`/`DELETE /workloads/{uid}/ssh-keys/{key}`)
 

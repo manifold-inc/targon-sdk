@@ -38,6 +38,7 @@ from targon.client.sandbox.models import (
     validate_update_timeouts,
 )
 from targon.client.sandbox.resources import Sandbox, SandboxTemplate
+from targon.client.workload import _ssh_keys_payload
 from targon.core.exceptions import (
     SandboxStateError,
     SandboxTemplateError,
@@ -158,6 +159,7 @@ class SandboxesClient(SandboxHTTPClient):
                 request.template.status.value,
             )
         validate_timeouts(request.ttl_sec, request.idle_timeout_sec)
+        ssh_keys = _ssh_keys_payload(request.ssh_keys)
         config = SandboxConfigInput(
             request.ttl_sec, request.idle_timeout_sec
         ).to_payload()
@@ -169,7 +171,7 @@ class SandboxesClient(SandboxHTTPClient):
         payload.update(
             _defined(
                 project_id=request.project_id,
-                ssh_keys=list(request.ssh_keys) if request.ssh_keys else None,
+                ssh_keys=ssh_keys or None,
                 ports=ports_payload(request.ports) if request.ports else None,
                 sandbox_config=config or None,
             )
@@ -279,7 +281,11 @@ class SandboxesClient(SandboxHTTPClient):
         payload = _defined(
             name=validate_name(request.name) if request.name is not None else None,
             project_id=request.project_id,
-            ssh_keys=list(request.ssh_keys) if request.ssh_keys is not None else None,
+            ssh_keys=(
+                _ssh_keys_payload(request.ssh_keys)
+                if request.ssh_keys is not None
+                else None
+            ),
             ports=ports_payload(request.ports) if request.ports is not None else None,
         )
         if request.sandbox_config is not None:

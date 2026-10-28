@@ -331,6 +331,27 @@ func IsRateLimited(err error) bool {
 	return errors.As(err, &rl)
 }
 
+// normalizeSSHKeys trims each SSH key UID and rejects blank entries. A nil
+// input stays nil so callers can still distinguish unset from empty.
+func normalizeSSHKeys(keys []string) ([]string, error) {
+	if keys == nil {
+		return nil, nil
+	}
+	out := make([]string, 0, len(keys))
+	for _, key := range keys {
+		trimmed := strings.TrimSpace(key)
+		if trimmed == "" {
+			return nil, &ValidationError{
+				Message: "ssh_keys must contain non-empty SSH key UIDs",
+				Field:   "ssh_keys",
+				Value:   key,
+			}
+		}
+		out = append(out, trimmed)
+	}
+	return out, nil
+}
+
 func requireNonEmpty(value, field string) (string, error) {
 	trimmed := strings.TrimSpace(value)
 	if trimmed == "" {
