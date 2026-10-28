@@ -301,9 +301,6 @@ class WorkloadEvent:
     message: Optional[str] = None
     display_message: Optional[str] = None
     reason: Optional[str] = None
-    pod_name: Optional[str] = None
-    container_name: Optional[str] = None
-    container_image: Optional[str] = None
     exit_code: Optional[int] = None
     replica_count: Optional[int] = None
     old_replica_count: Optional[int] = None
@@ -321,9 +318,6 @@ class WorkloadEvent:
             message=data.get("message"),
             display_message=data.get("display_message"),
             reason=data.get("reason"),
-            pod_name=data.get("pod_name"),
-            container_name=data.get("container_name"),
-            container_image=data.get("container_image"),
             exit_code=data.get("exit_code"),
             replica_count=data.get("replica_count"),
             old_replica_count=data.get("old_replica_count"),

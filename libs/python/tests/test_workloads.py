@@ -1,5 +1,6 @@
 import importlib.util
 
+import pytest
 from conftest import Response
 
 import targon
@@ -94,20 +95,55 @@ def test_volume_module_and_response_fields_are_removed():
     assert not hasattr(item, "volumes")
 
 
-def test_common_workload_operations_keep_org_scoped_routes(client):
+def test_workload_events_do_not_expose_backend_container_fields():
+    event = workload_models.WorkloadEvent.from_dict(
+        {
+            "workload_uid": "wrk-1",
+            "pod_name": "backend-pod",
+            "container_name": "backend-container",
+            "container_image": "backend-image",
+        }
+    )
+
+    assert not hasattr(event, "pod_name")
+    assert not hasattr(event, "container_name")
+    assert not hasattr(event, "container_image")
+
+
+@pytest.mark.parametrize("workload_type", ("VM", "BM", "SANDBOX"))
+def test_common_workload_operations_keep_org_scoped_routes(client, workload_type):
     client.session.request.side_effect = [
-        Response(body={"uid": "wrk-1", "type": "VM"}),
-        Response(body={"items": [{"uid": "wrk-1"}], "next_cursor": "next"}),
+        Response(body={"uid": "wrk-1", "type": workload_type}),
+        Response(
+            body={
+                "items": [{"uid": "wrk-1", "type": workload_type}],
+                "next_cursor": "next",
+            }
+        ),
         Response(body=None),
-        Response(body={"uid": "wrk-1", "status": "running"}),
-        Response(body={"items": [{"workload_uid": "wrk-1"}]}),
+        Response(
+            body={
+                "uid": "wrk-1",
+                "workload_type": workload_type,
+                "status": "running",
+            }
+        ),
+        Response(
+            body={"items": [{"workload_uid": "wrk-1", "workload_type": workload_type}]}
+        ),
     ]
 
-    assert client.workload.get("wrk-1").type == "VM"
-    assert client.workload.list(limit=10).next_cursor == "next"
+    assert client.workload.get("wrk-1").type == workload_type
+    page = client.workload.list(limit=10)
+    assert page.next_cursor == "next"
+    assert page.items[0].type == workload_type
     assert client.workload.delete("wrk-1") is None
-    assert client.workload.get_state("wrk-1").status == "running"
-    assert client.workload.get_events("wrk-1").items[0].workload_uid == "wrk-1"
+    state = client.workload.get_state("wrk-1")
+    assert state.status == "running"
+    assert state.workload_type == workload_type
+    event = client.workload.get_events("wrk-1").items[0]
+    assert event.workload_uid == "wrk-1"
+    assert event.workload_type == workload_type
 
     calls = client.session.request.call_args_list
     assert [call.args[0] for call in calls] == [
