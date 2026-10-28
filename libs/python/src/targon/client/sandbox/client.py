@@ -141,9 +141,7 @@ class SandboxesClient(SandboxHTTPClient):
             poll_interval=poll_interval,
         )
 
-    def _registration_payload(
-        self, request: SandboxCreateParams
-    ) -> Dict[str, Any]:
+    def _registration_payload(self, request: SandboxCreateParams) -> Dict[str, Any]:
         name = validate_name(request.name)
         if not isinstance(request.template, SandboxTemplate):
             raise invalid(
