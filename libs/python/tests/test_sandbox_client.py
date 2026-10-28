@@ -373,6 +373,26 @@ def test_register_sends_trimmed_ssh_keys_as_list(client):
     assert payload["ssh_keys"] == ["key-1", "key-2"]
 
 
+@pytest.mark.parametrize(
+    ("ssh_keys", "expected"),
+    [
+        ((" key-1 ", "key-2"), ["key-1", "key-2"]),
+        ((), []),
+    ],
+    ids=["trims-keys", "empty-list-clears-keys"],
+)
+def test_update_sends_ssh_key_list_on_wire(client, ssh_keys, expected):
+    client.sandbox_no_retry_session.request.return_value = Response(body=sandbox_body())
+
+    client.sandboxes.update(
+        "wrk-1",
+        SandboxUpdateParams(ssh_keys=ssh_keys),
+    )
+
+    payload = client.sandbox_no_retry_session.request.call_args.kwargs["json"]
+    assert payload == {"ssh_keys": expected}
+
+
 def test_update_rejects_zero_idle_timeout_but_create_and_fork_allow_it(client):
     zero_idle = SandboxConfigInput(idle_timeout_sec=0)
     with pytest.raises(ValidationError, match="must be positive"):

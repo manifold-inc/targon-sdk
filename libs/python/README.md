@@ -228,8 +228,8 @@ form.
 - `ssh_keys` is a sequence (tuple or list) of SSH key UID strings, for example
   `ssh_keys=("ssh-key-uid",)`. A bare string, bytes, set, or generator is
   rejected with a `ValidationError` rather than being split into characters, and
-  blank or non-string entries are rejected too. This applies to VM, Bare Metal,
-  and Sandbox create/update params.
+  blank or non-string entries are rejected too. This applies to VM and Bare
+  Metal create, Bare Metal reinstall, and Sandbox create/update.
 - `wait_until_ready` fails only on `error`, `suspended`, and `deleted`.
   `stopped` and `frozen` can still transition, so they keep waiting until the
   timeout.

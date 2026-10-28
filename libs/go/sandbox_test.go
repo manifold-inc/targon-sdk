@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -53,6 +54,68 @@ func TestSandboxCreateWireContractAndNoPOSTRetry(t *testing.T) {
 	var apiErr *APIError
 	if !errors.As(err, &apiErr) {
 		t.Fatalf("expected APIError, got %T", err)
+	}
+}
+
+func TestSandboxCreateTrimsSSHKeysOnWire(t *testing.T) {
+	c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/tha/v3/orgs/acme/workloads" {
+			t.Fatalf("%s %s", r.Method, r.URL.Path)
+		}
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		if got, want := body["ssh_keys"], []any{"key-1", "key-2"}; !reflect.DeepEqual(got, want) {
+			t.Fatalf("ssh_keys=%#v, want %#v", got, want)
+		}
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(`{"error":"full","reason":"WORKLOAD_SANDBOX_NO_CAPACITY"}`))
+	})
+
+	_, err := c.Sandboxes.Create(context.Background(), SandboxCreateParams{
+		Name:     "dev-box",
+		Template: readySandboxTemplate(c, "sbt-base"),
+		SSHKeys:  []string{" key-1 ", "key-2"},
+		Wait:     WaitOptions{NoWait: true},
+	})
+	if !errors.Is(err, ErrSandboxUnavailable) {
+		t.Fatalf("expected unavailable error, got %T %v", err, err)
+	}
+}
+
+func TestSandboxUpdateSSHKeysWireContract(t *testing.T) {
+	tests := []struct {
+		name string
+		keys []string
+		want []any
+	}{
+		{name: "trims keys", keys: []string{" key-1 ", "key-2"}, want: []any{"key-1", "key-2"}},
+		{name: "empty list clears keys", keys: []string{}, want: []any{}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodPatch || !strings.HasSuffix(r.URL.Path, "/workloads/wrk-1") {
+					t.Fatalf("%s %s", r.Method, r.URL.Path)
+				}
+				var body map[string]any
+				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+					t.Fatal(err)
+				}
+				got, ok := body["ssh_keys"]
+				if !ok || !reflect.DeepEqual(got, test.want) {
+					t.Fatalf("ssh_keys=%#v present=%v, want %#v", got, ok, test.want)
+				}
+				_ = json.NewEncoder(w).Encode(Workload{UID: "wrk-1", Type: "SANDBOX"})
+			})
+
+			if _, err := c.Sandboxes.Update(context.Background(), "wrk-1", SandboxUpdateParams{
+				SSHKeys: &test.keys,
+			}); err != nil {
+				t.Fatal(err)
+			}
+		})
 	}
 }
 
