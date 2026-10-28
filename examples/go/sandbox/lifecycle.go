@@ -34,7 +34,7 @@ func run(ctx context.Context, client *targon.Client) error {
 	}
 
 	fmt.Println("Registering sandbox")
-	s, err := client.Sandboxes.Register(ctx, targon.SandboxCreateParams{
+	registered, err := client.Sandboxes.Register(ctx, targon.SandboxCreateParams{
 		Name:     fmt.Sprintf("go-example-%d", time.Now().Unix()%1_000_000),
 		Template: &templates.Items[0],
 	})
@@ -44,12 +44,12 @@ func run(ctx context.Context, client *targon.Client) error {
 	deleted := false
 	defer func() {
 		if !deleted {
-			_ = s.Delete(ctx)
+			_ = registered.Delete(ctx)
 		}
 	}()
-	fmt.Printf("Sandbox registered (%s)\n", s.UID)
+	fmt.Printf("Sandbox registered (%s)\n", registered.UID)
 
-	s, err = s.Deploy(ctx, targon.WaitOptions{
+	s, err := registered.Deploy(ctx, targon.WaitOptions{
 		Timeout:      5 * time.Minute,
 		PollInterval: 2 * time.Second,
 	})

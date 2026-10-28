@@ -94,6 +94,57 @@ func TestSandboxRegisterAndResourceDeployLifecycle(t *testing.T) {
 	}
 }
 
+func TestSandboxCreateRegistersDeploysAndWaits(t *testing.T) {
+	var requests []string
+	c := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+		requests = append(requests, r.Method+" "+r.URL.Path)
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/tha/v3/orgs/acme/workloads":
+			_ = json.NewEncoder(w).Encode(Workload{UID: "wrk-create"})
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/workloads/wrk-create/deploy"):
+			_ = json.NewEncoder(w).Encode(WorkloadOperationResponse{UID: "wrk-create"})
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/workloads/wrk-create/state"):
+			_ = json.NewEncoder(w).Encode(WorkloadStateResponse{
+				UID: "wrk-create", WorkloadType: "SANDBOX", Status: "running",
+			})
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/workloads/wrk-create"):
+			_ = json.NewEncoder(w).Encode(Workload{
+				UID: "wrk-create", Type: "SANDBOX", Name: "created",
+			})
+		default:
+			t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
+		}
+	})
+
+	sandbox, err := c.Sandboxes.Create(context.Background(), SandboxCreateParams{
+		Name:     "created",
+		Template: readySandboxTemplate(c, "sbt-base"),
+		Wait: WaitOptions{
+			Timeout: time.Second, PollInterval: time.Millisecond,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sandbox.UID != "wrk-create" || sandbox.Name != "created" {
+		t.Fatalf("sandbox=%+v", sandbox)
+	}
+	want := []string{
+		"POST /tha/v3/orgs/acme/workloads",
+		"POST /tha/v3/orgs/acme/workloads/wrk-create/deploy",
+		"GET /tha/v3/orgs/acme/workloads/wrk-create/state",
+		"GET /tha/v3/orgs/acme/workloads/wrk-create",
+	}
+	if len(requests) != len(want) {
+		t.Fatalf("requests=%v, want %v", requests, want)
+	}
+	for i := range want {
+		if requests[i] != want[i] {
+			t.Fatalf("request %d=%q, want %q (all requests: %v)", i, requests[i], want[i], requests)
+		}
+	}
+}
+
 func TestSandboxValidation(t *testing.T) {
 	c := testClient(t, func(http.ResponseWriter, *http.Request) {
 		t.Fatal("validation should fail before HTTP")
