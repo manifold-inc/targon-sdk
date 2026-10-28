@@ -115,7 +115,7 @@ type WorkloadListItem struct {
 	UpdatedAt         string            `json:"updated_at"`
 }
 
-// WorkloadOperationResponse is returned by deploy/suspend/reboot.
+// WorkloadOperationResponse is returned by deploy and power operations.
 type WorkloadOperationResponse WorkloadListItem
 
 // WorkloadStateResponse is the dedicated state endpoint payload.
