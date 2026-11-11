@@ -6,7 +6,7 @@ Deno, and browsers.
 ## Installation
 
 ```bash
-npm install @targon/sdk@4.0.0-rc.1
+npm install @targon/sdk@4.0.0
 ```
 
 ## Quickstart

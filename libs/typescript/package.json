@@ -1,6 +1,6 @@
 {
   "name": "@targon/sdk",
-  "version": "4.0.0-rc.1",
+  "version": "4.0.0",
   "description": "Targon SDK to interact with Targon workloads",
   "license": "Apache-2.0",
   "author": "Manifold Labs <dev@manifold.inc>",

@@ -5,7 +5,7 @@ Python SDK to interact with Targon workloads.
 ## Installation
 
 ```bash
-pip install --pre "targon-sdk==4.0.0rc1"
+pip install "targon-sdk==4.0.0"
 ```
 
 ## Quickstart

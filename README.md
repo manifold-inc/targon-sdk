@@ -39,7 +39,7 @@ make cli
 
 ## SDK v4
 
-The v4 release candidate exposes typed VM, Bare Metal, and Sandbox APIs. Go and
+The v4 release exposes typed VM, Bare Metal, and Sandbox APIs. Go and
 Python provide all three typed workload services; TypeScript provides the
 Sandbox API.
 

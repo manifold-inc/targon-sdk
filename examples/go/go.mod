@@ -2,7 +2,7 @@ module github.com/manifold-inc/targon-sdk/examples/go
 
 go 1.24
 
-require github.com/manifold-inc/targon-sdk/libs/go/v4 v4.0.0-rc.1
+require github.com/manifold-inc/targon-sdk/libs/go/v4 v4.0.0
 
 require (
 	github.com/coder/websocket v1.8.15 // indirect

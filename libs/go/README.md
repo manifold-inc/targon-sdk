@@ -5,7 +5,7 @@ Go SDK to interact with Targon workloads.
 ## Installation
 
 ```bash
-go get github.com/manifold-inc/targon-sdk/libs/go/v4@v4.0.0-rc.1
+go get github.com/manifold-inc/targon-sdk/libs/go/v4@v4.0.0
 ```
 
 ## Quickstart

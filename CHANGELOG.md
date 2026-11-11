@@ -9,6 +9,11 @@ Component releases use prefixed tags (`cli/vX.Y.Z`, `python/vX.Y.Z`, …).
 
 ## [Unreleased]
 
+## [4.0.0] - 2026-11-11
+
+Coordinated release of the Go (`libs/go/v4.0.0`), Python (`python/v4.0.0`),
+and TypeScript (`typescript/v4.0.0`) SDKs.
+
 ### Fixed
 - Go request deadlines now come from the call context, and TypeScript applies
   operation-specific deadlines. Exec and file transfer are no longer cut off
@@ -48,7 +53,6 @@ Component releases use prefixed tags (`cli/vX.Y.Z`, `python/vX.Y.Z`, …).
 - Common `wait_until_ready` / `WaitUntilReady` fails only on `error`,
   `suspended`, and `deleted`. `stopped` and `frozen` are not terminal because
   they can transition later; Sandbox target-specific waits are unchanged.
-- Prepared coordinated `4.0.0-rc.1` releases for Go, Python, and TypeScript.
 - In Go and Python, generic workload creation now migrates to typed
   `VMs.Create`, `BareMetal.Create`, or `Sandboxes.Create` operations. Common
   workload list, get, state, events, delete, wait-until-ready, verify, and SSH
