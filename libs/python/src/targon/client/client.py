@@ -3,11 +3,13 @@ from typing import Any, Optional
 import requests
 from requests.adapters import HTTPAdapter, Retry
 
+from targon.client.bare_metal import BareMetalClient
 from targon.client.constants import DEFAULT_BASE_URL
 from targon.client.inventory import InventoryClient
 from targon.client.projects import ProjectClient
+from targon.client.sandbox import SandboxesClient
 from targon.client.ssh_key import SshKeyClient
-from targon.client.volume import VolumeClient
+from targon.client.vm import VMClient
 from targon.client.workload import WorkloadClient
 from targon.core.auth import get_api_key
 from targon.core.config import Config
@@ -46,15 +48,18 @@ class Client:
             user_agent=user_agent,
         )
         self.session = self._init_session()
+        self.sandbox_no_retry_session = self._init_sandbox_no_retry_session()
         self._owns_session = True
         self._init_lazy_clients()
 
     def _init_lazy_clients(self) -> None:
         self._inventory: Optional[InventoryClient] = None
         self._workload: Optional[WorkloadClient] = None
-        self._volume: Optional[VolumeClient] = None
         self._ssh_key: Optional[SshKeyClient] = None
         self._project: Optional[ProjectClient] = None
+        self._sandboxes: Optional[SandboxesClient] = None
+        self._vms: Optional[VMClient] = None
+        self._bare_metal: Optional[BareMetalClient] = None
         self._orgs: Optional[Any] = None
         self._members: Optional[Any] = None
         self._api_tokens: Optional[Any] = None
@@ -81,6 +86,16 @@ class Client:
 
         return session
 
+    def _init_sandbox_no_retry_session(self) -> requests.Session:
+        """Build the transport used only for non-idempotent sandbox calls."""
+        session = requests.Session()
+        session.headers.update(self.config.headers)
+        adapter = HTTPAdapter(max_retries=0, pool_connections=10, pool_maxsize=20)
+        session.mount("http://", adapter)
+        session.mount("https://", adapter)
+        session.verify = self.config.verify_ssl
+        return session
+
     @property
     def inventory(self) -> InventoryClient:
         if self._inventory is None:
@@ -92,12 +107,6 @@ class Client:
         if self._workload is None:
             self._workload = WorkloadClient(self)
         return self._workload
-
-    @property
-    def volume(self) -> VolumeClient:
-        if self._volume is None:
-            self._volume = VolumeClient(self)
-        return self._volume
 
     @property
     def ssh_key(self) -> SshKeyClient:
@@ -114,6 +123,24 @@ class Client:
         if self._project is None:
             self._project = ProjectClient(self)
         return self._project
+
+    @property
+    def sandboxes(self) -> SandboxesClient:
+        if self._sandboxes is None:
+            self._sandboxes = SandboxesClient(self)
+        return self._sandboxes
+
+    @property
+    def vms(self) -> VMClient:
+        if self._vms is None:
+            self._vms = VMClient(self)
+        return self._vms
+
+    @property
+    def bare_metal(self) -> BareMetalClient:
+        if self._bare_metal is None:
+            self._bare_metal = BareMetalClient(self)
+        return self._bare_metal
 
     @property
     def orgs(self) -> Any:
@@ -215,6 +242,7 @@ class Client:
             user_agent=self.config.user_agent,
         )
         scoped.session = self.session
+        scoped.sandbox_no_retry_session = self.sandbox_no_retry_session
         scoped._owns_session = False
         scoped._init_lazy_clients()
         return scoped
@@ -222,6 +250,7 @@ class Client:
     def close(self) -> None:
         if self._owns_session:
             self.session.close()
+            self.sandbox_no_retry_session.close()
 
     def __enter__(self) -> "Client":
         return self

@@ -1,0 +1,39 @@
+name: Go
+
+on:
+  push:
+    paths:
+      - "libs/go/**"
+      - ".github/workflows/go.yml"
+  pull_request:
+    paths:
+      - "libs/go/**"
+      - ".github/workflows/go.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test Go SDK
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: libs/go
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: libs/go/go.mod
+      - name: Test
+        run: go test ./...
+      - name: Vet
+        run: go vet ./...
+      - name: Fmt
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "unformatted files:"
+            echo "$unformatted"
+            exit 1
+          fi

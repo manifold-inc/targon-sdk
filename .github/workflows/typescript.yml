@@ -1,0 +1,40 @@
+name: TypeScript
+
+on:
+  push:
+    paths:
+      - "libs/typescript/**"
+      - ".github/workflows/typescript.yml"
+  pull_request:
+    paths:
+      - "libs/typescript/**"
+      - ".github/workflows/typescript.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test Node.js ${{ matrix.node-version }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: libs/typescript
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: [18, 22]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+          cache-dependency-path: libs/typescript/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
+      - run: npm run typecheck
+      - name: Inspect package
+        if: matrix.node-version == 22
+        run: npm pack --dry-run

@@ -3,7 +3,7 @@ from typing import TYPE_CHECKING, Any
 
 import requests
 
-from targon.core.exceptions import APIError
+from targon.core.exceptions import api_error
 
 if TYPE_CHECKING:
     from targon.client.client import Client
@@ -25,6 +25,7 @@ class BaseHTTPClient:
         return cls(client)
 
     def _request(self, method: str, path: str, **kwargs: Any):
+        workload_uid = kwargs.pop("_workload_uid", None)
         kwargs.setdefault("timeout", self.client.config.timeout)
         kwargs.setdefault("verify", self.client.config.verify_ssl)
         res = self.session.request(
@@ -32,7 +33,7 @@ class BaseHTTPClient:
             f"{self.base_url}{path}",
             **kwargs,
         )
-        return self._handle_response(res)
+        return self._handle_response(res, workload_uid=workload_uid)
 
     def _get(self, path: str, **kwargs: Any):
         return self._request("GET", path, **kwargs)
@@ -49,7 +50,7 @@ class BaseHTTPClient:
     def _delete(self, path: str, **kwargs: Any):
         return self._request("DELETE", path, **kwargs)
 
-    def _handle_response(self, res: requests.Response):
+    def _handle_response(self, res: requests.Response, *, workload_uid: Any = None):
         if res.status_code >= 400:
             text = res.text
             message = text
@@ -61,10 +62,12 @@ class BaseHTTPClient:
                     reason = body.get("reason")
             except (json.JSONDecodeError, ValueError):
                 pass
-            raise APIError(
+            raise api_error(
                 res.status_code,
                 message,
-                response={"reason": reason} if reason else None,
+                reason=reason,
+                workload_uid=workload_uid,
+                request_id=res.headers.get("X-Request-ID"),
             )
 
         content_type = res.headers.get("Content-Type", "")
