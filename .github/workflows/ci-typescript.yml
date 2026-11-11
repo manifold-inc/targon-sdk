@@ -1,14 +1,14 @@
-name: TypeScript
+name: CI / TypeScript
 
 on:
   push:
     paths:
       - "libs/typescript/**"
-      - ".github/workflows/typescript.yml"
+      - ".github/workflows/ci-typescript.yml"
   pull_request:
     paths:
       - "libs/typescript/**"
-      - ".github/workflows/typescript.yml"
+      - ".github/workflows/ci-typescript.yml"
 
 permissions:
   contents: read

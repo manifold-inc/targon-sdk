@@ -1,14 +1,14 @@
-name: Go
+name: CI / Go
 
 on:
   push:
     paths:
       - "libs/go/**"
-      - ".github/workflows/go.yml"
+      - ".github/workflows/ci-go.yml"
   pull_request:
     paths:
       - "libs/go/**"
-      - ".github/workflows/go.yml"
+      - ".github/workflows/ci-go.yml"
 
 permissions:
   contents: read

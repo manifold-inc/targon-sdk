@@ -1,14 +1,14 @@
-name: Python
+name: CI / Python
 
 on:
   push:
     paths:
       - "libs/python/**"
-      - ".github/workflows/python.yml"
+      - ".github/workflows/ci-python.yml"
   pull_request:
     paths:
       - "libs/python/**"
-      - ".github/workflows/python.yml"
+      - ".github/workflows/ci-python.yml"
 
 permissions:
   contents: read
