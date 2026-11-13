@@ -20,6 +20,17 @@ type retryTransport struct {
 
 type noRetryContextKey struct{}
 
+// CloseIdleConnections preserves idle connection cleanup through the retry wrapper.
+func (t *retryTransport) CloseIdleConnections() {
+	base := t.base
+	if base == nil {
+		base = http.DefaultTransport
+	}
+	if closer, ok := base.(interface{ CloseIdleConnections() }); ok {
+		closer.CloseIdleConnections()
+	}
+}
+
 func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	base := t.base
 	if base == nil {
