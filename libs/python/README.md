@@ -197,6 +197,14 @@ Template resources also provide `refresh()`, `update(...)`, and `delete()`.
 Only a bound, READY template resource can create a sandbox; raw template IDs
 are not accepted.
 
+`sandbox.exec(cmd, timeout_sec=60)` (or `client.sandboxes.exec(uid, cmd, ...)`)
+allows 1–600 seconds for the command. Its HTTP request timeout is the greater
+of the client's `timeout` and `timeout_sec + 15` seconds. The fixed 15-second
+margin lets the server return the result after a command reaches its deadline.
+Other requests keep the configured client timeout, and exec POSTs are never
+retried. These are Requests connection/read timeouts, not a total wall-clock
+deadline for the HTTP exchange.
+
 File and terminal operations are grouped under bound capabilities:
 
 ```python
