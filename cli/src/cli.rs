@@ -3,16 +3,25 @@ use clap_complete::Shell;
 
 use crate::commands::api_token::ApiTokenCommands;
 use crate::commands::auth::AuthCommands;
+use crate::commands::bm::BmCommands;
 use crate::commands::inventory::InventoryArgs;
 use crate::commands::member::MemberCommands;
 use crate::commands::org::OrgCommands;
 use crate::commands::project::ProjectCommands;
-use crate::commands::rental::RentalCommands;
 use crate::commands::service_token::ServiceTokenCommands;
 use crate::commands::ssh_key::SshKeyCommands;
 use crate::commands::vm::VmCommands;
-use crate::commands::volume::VolumeCommands;
 use crate::commands::workload::WorkloadCommands;
+
+const BM_ABOUT: &str = "Deploy bare metal servers";
+const BM_LONG_ABOUT: &str = "Deploy bare metal servers
+
+Bare metal servers are workloads: manage them with
+`targon workload <get|state|delete|events> <UID>`.
+Changing the OS image, SSH keys or hostname is a reinstall - use
+`targon bm reinstall`, which wipes every disk on the machine.
+`bm power-off` keeps the server claimed and billed; use
+`targon workload delete` to release it and stop billing.";
 
 const VM_ABOUT: &str = "Deploy confidential VMs";
 const VM_LONG_ABOUT: &str = "Deploy confidential VMs
@@ -65,15 +74,12 @@ pub enum Commands {
     /// Manage any workload by UID
     #[command(subcommand, alias = "wl")]
     Workload(Box<WorkloadCommands>),
-    /// Deploy container rentals
-    #[command(subcommand)]
-    Rental(Box<RentalCommands>),
     /// Deploy confidential VMs
     #[command(subcommand, about = VM_ABOUT, long_about = VM_LONG_ABOUT)]
     Vm(Box<VmCommands>),
-    /// Manage volumes
-    #[command(subcommand, alias = "vol")]
-    Volume(VolumeCommands),
+    /// Deploy bare metal servers
+    #[command(subcommand, alias = "baremetal", about = BM_ABOUT, long_about = BM_LONG_ABOUT)]
+    Bm(Box<BmCommands>),
     /// Manage SSH keys
     #[command(subcommand, alias = "key")]
     SshKey(SshKeyCommands),
@@ -82,6 +88,9 @@ pub enum Commands {
     Project(ProjectCommands),
     /// Browse available inventory
     Inventory(InventoryArgs),
+    /// List active inventory regions
+    #[command(alias = "regions")]
+    Region,
     /// Show wallet, credits, and active profile
     Whoami,
     /// Show CLI and API versions

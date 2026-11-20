@@ -76,8 +76,8 @@ pub fn next_action(label: &str, value: impl AsRef<str>) {
 
 /// Rounded summary box shown before spending money:
 /// ```text
-///   ╭─ rental ─────────────────╮
-///   │  name      vllm-infer…   │
+///   ╭─ vm ─────────────────────╮
+///   │  name      dev-vm…       │
 ///   ╰──────────────────────────╯
 /// ```
 /// Frame and keys are dim; values keep their own colors.

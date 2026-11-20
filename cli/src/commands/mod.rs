@@ -1,23 +1,25 @@
 pub mod api_token;
 pub mod auth;
+pub mod bm;
 pub mod inventory;
 pub mod member;
 pub mod org;
 pub mod project;
-pub mod rental;
+pub mod region;
 pub mod service_token;
 pub mod ssh_key;
 pub mod version;
 pub mod vm;
-pub mod volume;
 pub mod whoami;
 pub mod workload;
+
+use colored::Colorize;
 
 use crate::client::pagination::Page;
 use crate::client::types::{Inventory, InventoryFilter, Workload};
 use crate::client::Client;
 use crate::error::{CliError, Result};
-use crate::output::{format, prompt, style, OutputFormat};
+use crate::output::{format, palettes, prompt, style, OutputFormat};
 
 pub struct Context {
     pub client: Client,
@@ -66,11 +68,20 @@ impl Context {
 }
 
 pub async fn select_resource(ctx: &Context, resource_type: &str) -> Result<String> {
+    select_resource_in_region(ctx, resource_type, None).await
+}
+
+pub async fn select_resource_in_region(
+    ctx: &Context,
+    resource_type: &str,
+    region: Option<&str>,
+) -> Result<String> {
     let items: Vec<_> = ctx
         .client
         .inventory()
         .list(&InventoryFilter {
             resource_type: Some(resource_type.to_string()),
+            region: region.map(str::to_string),
             ..Default::default()
         })
         .await?
@@ -105,10 +116,20 @@ pub(crate) async fn resource_pricing(
     resource_name: &str,
     resource_type: &str,
 ) -> Option<Inventory> {
+    resource_pricing_in_region(ctx, resource_name, resource_type, None).await
+}
+
+pub(crate) async fn resource_pricing_in_region(
+    ctx: &Context,
+    resource_name: &str,
+    resource_type: &str,
+    region: Option<&str>,
+) -> Option<Inventory> {
     ctx.client
         .inventory()
         .list(&InventoryFilter {
             resource_type: Some(resource_type.to_string()),
+            region: region.map(str::to_string),
             ..Default::default()
         })
         .await
@@ -153,37 +174,109 @@ pub async fn select_ssh_keys(ctx: &Context) -> Result<Vec<String>> {
         .collect())
 }
 
-pub(crate) async fn ensure_rental(ctx: &Context, uid: &str, verb: &str) -> Result<Workload> {
+/// Bare metal has no password path, so at least one key must be chosen.
+pub async fn select_ssh_keys_required(ctx: &Context) -> Result<Vec<String>> {
+    let keys = ctx
+        .client
+        .ssh_keys(ctx.org()?)
+        .list(&Page::default())
+        .await?;
+    if keys.items.is_empty() {
+        return Err(CliError::Config(
+            "bare metal requires at least one ssh key\nregister one with: targon key add"
+                .to_string(),
+        ));
+    }
+    let labels: Vec<String> = keys
+        .items
+        .iter()
+        .map(|k| format!("{:<24} {}", k.name, format::short_uid(&k.uid)))
+        .collect();
+    let selected = prompt::multi_select("SSH keys (space to toggle, enter to confirm)", &labels)?;
+    let chosen: Vec<String> = selected
+        .into_iter()
+        .filter_map(|i| keys.items.get(i).map(|k| k.uid.clone()))
+        .collect();
+    if chosen.is_empty() {
+        return Err(CliError::Config(
+            "bare metal requires at least one ssh key".to_string(),
+        ));
+    }
+    Ok(chosen)
+}
+
+pub(crate) fn resource_value(
+    resource_name: &str,
+    pricing: Option<&Inventory>,
+) -> String {
+    match pricing {
+        Some(p) => format!(
+            "{} {} {}",
+            p.display_name,
+            style::SEP,
+            format::cost_per_hour(p.cost_per_hour).color(palettes::SUCCESS)
+        ),
+        None => resource_name.to_string(),
+    }
+}
+
+/// RFC-1123: dot-separated labels of lowercase alphanumerics and hyphens,
+/// each starting and ending alphanumeric. ntha caps the whole name at 63.
+pub(crate) fn validate_hostname(raw: &str) -> Result<String> {
+    let hostname = raw.trim().to_ascii_lowercase();
+    let invalid = || {
+        CliError::Config(format!(
+            "invalid --hostname '{raw}'\nuse lowercase letters, digits, hyphens and dots, at most 63 characters"
+        ))
+    };
+    if hostname.is_empty() || hostname.chars().count() > 63 {
+        return Err(invalid());
+    }
+    for label in hostname.split('.') {
+        if label.is_empty() || label.len() > 63 {
+            return Err(invalid());
+        }
+        if !label
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+        {
+            return Err(invalid());
+        }
+        if label.starts_with('-') || label.ends_with('-') {
+            return Err(invalid());
+        }
+    }
+    Ok(hostname)
+}
+
+pub(crate) async fn ensure_vm(ctx: &Context, uid: &str, verb: &str) -> Result<Workload> {
+    ensure_type(ctx, uid, verb, "VM").await
+}
+
+pub(crate) async fn ensure_bm(ctx: &Context, uid: &str, verb: &str) -> Result<Workload> {
+    ensure_type(ctx, uid, verb, "BM").await
+}
+
+async fn ensure_type(ctx: &Context, uid: &str, verb: &str, want: &str) -> Result<Workload> {
     let workload = ctx.client.workloads(ctx.org()?).get(uid).await?;
-    if workload.workload_type == "VM" {
-        // First line is the red fact; subsequent lines render as dim → hints.
-        let hint = match verb {
-            "exec" => format!(
-                "{uid} is a VM — exec is not supported\nconnect over SSH instead: targon workload get {uid}"
-            ),
-            "start" => format!(
-                "{uid} is a VM — start applies only to rentals\nstart it with: targon vm start {uid}"
-            ),
-            _ => format!("{uid} is a VM — {verb} applies only to rentals"),
-        };
+    if workload.workload_type != want {
+        let workload_type = &workload.workload_type;
+        let hint = format!(
+            "{uid} is a {workload_type} — {verb} applies only to {want}s\nrun it with: targon {} {verb} {uid}",
+            family(workload_type)
+        );
         return Err(CliError::Config(hint));
     }
     Ok(workload)
 }
 
-pub(crate) async fn ensure_vm(ctx: &Context, uid: &str, verb: &str) -> Result<Workload> {
-    let workload = ctx.client.workloads(ctx.org()?).get(uid).await?;
-    if workload.workload_type != "VM" {
-        let workload_type = &workload.workload_type;
-        let hint = match verb {
-            "start" => format!(
-                "{uid} is a {workload_type} — start applies only to VMs\nstart it with: targon rental start {uid}"
-            ),
-            _ => format!("{uid} is a {workload_type} — {verb} applies only to VMs"),
-        };
-        return Err(CliError::Config(hint));
+/// Command family that owns a workload type, for "run it with:" hints.
+fn family(workload_type: &str) -> &'static str {
+    match workload_type {
+        "VM" => "vm",
+        "BM" => "bm",
+        _ => "workload",
     }
-    Ok(workload)
 }
 
 #[cfg(test)]

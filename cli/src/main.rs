@@ -50,15 +50,21 @@ fn report_error(e: &CliError, json: bool) {
 
 fn handle_parse_error(e: clap::Error) -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    if e.kind() == ErrorKind::InvalidSubcommand && args.first().map(String::as_str) == Some("vm") {
+    let family = args.first().map(String::as_str);
+    if e.kind() == ErrorKind::InvalidSubcommand && matches!(family, Some("vm") | Some("bm")) {
         let verb = args.get(1).cloned().unwrap_or_default();
         let uid = args
             .get(2)
             .map(|u| format!(" {u}"))
             .unwrap_or_else(|| " <uid>".to_string());
+        let noun = if family == Some("bm") {
+            "Bare metal servers"
+        } else {
+            "VMs"
+        };
         style::error(format!("unrecognized subcommand '{verb}'"));
         style::hint(format!(
-            "VMs are managed as workloads: targon workload {verb}{uid}"
+            "{noun} are managed as workloads: targon workload {verb}{uid}"
         ));
         return ExitCode::from(2);
     }
@@ -94,7 +100,10 @@ async fn run(cli: Cli) -> Result<()> {
         _ => {}
     }
 
-    let requires_key = !matches!(cli.command, Commands::Version | Commands::Inventory(_));
+    let requires_key = !matches!(
+        cli.command,
+        Commands::Version | Commands::Inventory(_) | Commands::Region
+    );
     let resolved = config::resolve(
         cli.profile.as_deref(),
         cli.base_url.as_deref(),
@@ -126,12 +135,12 @@ async fn run(cli: Cli) -> Result<()> {
         Commands::Member(cmd) => commands::member::handle(&ctx, cmd).await,
         Commands::ApiToken(cmd) => commands::api_token::handle(&ctx, cmd).await,
         Commands::ServiceToken(cmd) => commands::service_token::handle(&ctx, cmd).await,
-        Commands::Rental(cmd) => commands::rental::handle(&ctx, cmd).await,
         Commands::Vm(cmd) => commands::vm::handle(&ctx, cmd).await,
-        Commands::Volume(cmd) => commands::volume::handle(&ctx, cmd).await,
+        Commands::Bm(cmd) => commands::bm::handle(&ctx, cmd).await,
         Commands::SshKey(cmd) => commands::ssh_key::handle(&ctx, cmd).await,
         Commands::Project(cmd) => commands::project::handle(&ctx, cmd).await,
         Commands::Inventory(cmd) => commands::inventory::handle(&ctx, cmd).await,
+        Commands::Region => commands::region::handle(&ctx).await,
         Commands::Whoami => commands::whoami::handle(&ctx).await,
         Commands::Version => commands::version::handle(&ctx).await,
     }

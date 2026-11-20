@@ -1,5 +1,3 @@
-use std::io::Read;
-
 use clap::{Args, Subcommand};
 use comfy_table::Cell;
 
@@ -16,7 +14,7 @@ pub struct VmSpec {
     /// Image from the catalog (see `targon vm images`)
     #[arg(long)]
     pub image: Option<String>,
-    /// Resource SKU (see `targon inventory`)
+    /// Resource SKU (see `targon inventory --type vm`)
     #[arg(long)]
     pub resource: Option<String>,
     /// SSH key (repeatable; cannot be changed after boot)
@@ -25,12 +23,15 @@ pub struct VmSpec {
     /// Port to expose (repeatable, comma-separated ok)
     #[arg(long = "port", value_name = "PORT", value_delimiter = ',')]
     pub port: Vec<String>,
+    /// RFC-1123 hostname (default: the VM name)
+    #[arg(long)]
+    pub hostname: Option<String>,
+    /// Place on one of the organization's reservations instead of on-demand
+    #[arg(long, value_name = "UID")]
+    pub reservation: Option<String>,
     /// Project (default: active project from `project use`)
     #[arg(long)]
     pub project: Option<String>,
-    /// Read the VM password from stdin (for CI)
-    #[arg(long = "password-stdin")]
-    pub password_stdin: bool,
 }
 
 #[derive(Debug, Subcommand)]
@@ -201,7 +202,6 @@ async fn build_request(
             commands::select_resource(ctx, "vm").await?
         }
     };
-    let password = read_password(spec.password_stdin)?;
     let ports = if spec.port.is_empty() && prompt::is_tty() {
         commands::prompt_list("Ports to expose (comma-separated, blank for none)")?
     } else {
@@ -214,14 +214,21 @@ async fn build_request(
     } else {
         vec![]
     };
+    let hostname = match spec.hostname {
+        Some(hostname) => Some(commands::validate_hostname(&hostname)?),
+        None => None,
+    };
 
     let mut req = CreateWorkloadRequest::new(WorkloadType::Vm, name, image, resource_name);
     req.project_id = ctx.project(spec.project);
     req.ssh_keys = ssh_keys;
+    req.reservation_uid = spec.reservation;
     for raw in &ports {
         req.ports.push(workload::parse_port(raw)?);
     }
-    req.vm_config = Some(VmConfig { password });
+    if hostname.is_some() {
+        req.vm_config = Some(VmConfig { hostname });
+    }
 
     if prompt::is_tty() && !yes {
         let pricing = commands::resource_pricing(ctx, &req.resource_name, "vm").await;
@@ -230,9 +237,15 @@ async fn build_request(
             ("image", req.image.clone()),
             (
                 "resource",
-                crate::commands::rental::resource_value(&req.resource_name, pricing.as_ref()),
+                commands::resource_value(&req.resource_name, pricing.as_ref()),
             ),
         ];
+        if let Some(hostname) = req.vm_config.as_ref().and_then(|c| c.hostname.clone()) {
+            rows.push(("hostname", hostname));
+        }
+        if let Some(reservation) = &req.reservation_uid {
+            rows.push(("reservation", reservation.clone()));
+        }
         if let Some(project) = &req.project_id {
             rows.push(("project", project.clone()));
         }
@@ -272,21 +285,4 @@ async fn select_image(ctx: &Context) -> Result<String> {
         .collect();
     let idx = prompt::select("Select an image", &labels)?;
     Ok(images[idx].name.clone())
-}
-
-fn read_password(from_stdin: bool) -> Result<String> {
-    let password = if from_stdin {
-        let mut buf = String::new();
-        std::io::stdin().read_to_string(&mut buf)?;
-        buf.trim().to_string()
-    } else {
-        prompt::require_tty("--password-stdin")?;
-        prompt::password("VM password")?
-    };
-    if password.chars().count() < 4 {
-        return Err(CliError::Config(
-            "vm password must be at least 4 characters".to_string(),
-        ));
-    }
-    Ok(password)
 }

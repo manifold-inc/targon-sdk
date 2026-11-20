@@ -75,7 +75,7 @@ pub fn uid_cell(uid: impl Into<String>) -> Cell {
     colored_cell(uid.into(), palettes::ACCENT)
 }
 
-/// Workload type in its own hue (RENTAL blue, VM magenta).
+/// Workload type in its own hue (VM magenta, BM orange).
 pub fn type_cell(workload_type: &str) -> Cell {
     colored_cell(
         workload_type.to_string(),

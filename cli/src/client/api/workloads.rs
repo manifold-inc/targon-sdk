@@ -5,10 +5,9 @@ use crate::client::error::Result;
 use crate::client::http::HttpClient;
 use crate::client::pagination::{List, Page};
 use crate::client::types::{
-    AttachVolumeRequest, CreateWorkloadRequest, ListWorkloadsParams, LogOptions,
+    BmImage, CreateWorkloadRequest, ListWorkloadsParams, LogOptions, ReinstallWorkloadRequest,
     UpdateWorkloadRequest, VerifyWorkloadRequest, VerifyWorkloadResponse, VmImage, Workload,
-    WorkloadEvent, WorkloadOperationResponse, WorkloadSshKeyAttachment, WorkloadStateResponse,
-    WorkloadVolume,
+    WorkloadEvent, WorkloadOperationResponse, WorkloadStateResponse,
 };
 
 #[derive(Debug, Clone)]
@@ -69,15 +68,31 @@ impl Workloads {
             .await
     }
 
-    pub async fn suspend(&self, uid: &str) -> Result<WorkloadOperationResponse> {
-        self.http
-            .post_empty(&format!("{}/{uid}/suspend", self.base_path))
-            .await
-    }
-
     pub async fn reboot(&self, uid: &str) -> Result<WorkloadOperationResponse> {
         self.http
             .post_empty(&format!("{}/{uid}/reboot", self.base_path))
+            .await
+    }
+
+    pub async fn reinstall(
+        &self,
+        uid: &str,
+        req: &ReinstallWorkloadRequest,
+    ) -> Result<WorkloadOperationResponse> {
+        self.http
+            .post(&format!("{}/{uid}/reinstall", self.base_path), req)
+            .await
+    }
+
+    pub async fn power_on(&self, uid: &str) -> Result<WorkloadOperationResponse> {
+        self.http
+            .post_empty(&format!("{}/{uid}/power-on", self.base_path))
+            .await
+    }
+
+    pub async fn power_off(&self, uid: &str) -> Result<WorkloadOperationResponse> {
+        self.http
+            .post_empty(&format!("{}/{uid}/power-off", self.base_path))
             .await
     }
 
@@ -115,63 +130,21 @@ impl Workloads {
             .await
     }
 
-    pub async fn exec(
-        &self,
-        uid: &str,
-        command: &[String],
-    ) -> Result<impl Stream<Item = reqwest::Result<Bytes>>> {
-        let query: Vec<(&str, String)> =
-            command.iter().map(|arg| ("command", arg.clone())).collect();
-        self.http
-            .post_stream(&format!("{}/{uid}/exec", self.base_path), &query)
-            .await
-    }
-
     pub async fn vm_images(&self) -> Result<Vec<VmImage>> {
         self.http
             .get(&format!("{}/vm-images", self.base_path))
             .await
     }
 
+    pub async fn bm_images(&self) -> Result<Vec<BmImage>> {
+        self.http
+            .get(&format!("{}/bm-images", self.base_path))
+            .await
+    }
+
     pub async fn verify(&self, req: &VerifyWorkloadRequest) -> Result<VerifyWorkloadResponse> {
         self.http
             .post(&format!("{}/verify", self.base_path), req)
-            .await
-    }
-
-    pub async fn attach_volume(
-        &self,
-        uid: &str,
-        volume_uid: &str,
-        req: &AttachVolumeRequest,
-    ) -> Result<WorkloadVolume> {
-        self.http
-            .put(
-                &format!("{}/{uid}/volumes/{volume_uid}", self.base_path),
-                req,
-            )
-            .await
-    }
-
-    pub async fn detach_volume(&self, uid: &str, volume_uid: &str) -> Result<()> {
-        self.http
-            .delete(&format!("{}/{uid}/volumes/{volume_uid}", self.base_path))
-            .await
-    }
-
-    pub async fn attach_ssh_key(
-        &self,
-        uid: &str,
-        ssh_key_uid: &str,
-    ) -> Result<WorkloadSshKeyAttachment> {
-        self.http
-            .put_empty(&format!("{}/{uid}/ssh-keys/{ssh_key_uid}", self.base_path))
-            .await
-    }
-
-    pub async fn detach_ssh_key(&self, uid: &str, ssh_key_uid: &str) -> Result<()> {
-        self.http
-            .delete(&format!("{}/{uid}/ssh-keys/{ssh_key_uid}", self.base_path))
             .await
     }
 }

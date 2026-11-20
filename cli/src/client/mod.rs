@@ -13,7 +13,7 @@ use std::time::Duration;
 
 use api::{
     ApiTokens, CreditsApi, InventoryApi, Members, Orgs, Projects, ServiceTokens, SshKeys,
-    VersionApi, Volumes, WalletApi, Workloads,
+    VersionApi, WalletApi, Workloads,
 };
 use http::HttpClient;
 
@@ -35,10 +35,6 @@ impl Client {
 
     pub fn workloads(&self, org: impl Into<String>) -> Workloads {
         Workloads::new(self.http.clone(), org)
-    }
-
-    pub fn volumes(&self, org: impl Into<String>) -> Volumes {
-        Volumes::new(self.http.clone(), org)
     }
 
     pub fn ssh_keys(&self, org: impl Into<String>) -> SshKeys {

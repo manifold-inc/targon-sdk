@@ -4,7 +4,6 @@ pub mod org;
 pub mod project;
 pub mod ssh_key;
 pub mod token;
-pub mod volume;
 pub mod workload;
 
 pub use common::*;
@@ -13,5 +12,4 @@ pub use org::*;
 pub use project::*;
 pub use ssh_key::*;
 pub use token::*;
-pub use volume::*;
 pub use workload::*;
