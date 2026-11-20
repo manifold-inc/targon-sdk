@@ -48,6 +48,9 @@ from targon.core.exceptions import (
 if TYPE_CHECKING:
     from targon.client.client import Client
 
+# Allow the server to return a result after the command deadline, matching Go/TS.
+_EXEC_RESPONSE_MARGIN_SEC = 15
+
 
 class SandboxTemplatesClient(SandboxHTTPClient):
     def _path(self, uid: Optional[str] = None) -> str:
@@ -502,6 +505,12 @@ class SandboxesClient(SandboxHTTPClient):
         return self.get(workload_uid)
 
     def exec(self, workload_uid: str, cmd: str, *, timeout_sec: int = 60) -> ExecResult:
+        """Allow a silent command to finish before the HTTP request times out.
+
+        The request timeout is at least ``timeout_sec + 15`` seconds so the
+        server can return a result even when the command reaches its deadline.
+        A longer client timeout is preserved. The POST is never retried.
+        """
         workload_uid = non_empty(workload_uid, "workload_uid")
         non_empty(cmd, "cmd")
         command_bytes = len(cmd.encode("utf-8"))
@@ -516,6 +525,9 @@ class SandboxesClient(SandboxHTTPClient):
                 self._workloads_path(workload_uid, "exec"),
                 workload_uid=workload_uid,
                 json={"cmd": cmd, "timeout_sec": timeout_sec},
+                timeout=max(
+                    self.client.config.timeout, timeout_sec + _EXEC_RESPONSE_MARGIN_SEC
+                ),
             )
         )
 

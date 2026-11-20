@@ -1,4 +1,5 @@
 import pytest
+import requests
 from conftest import (  # noqa: F401
     Response,
     hydrated_template,
@@ -297,6 +298,57 @@ def test_exec_validates_trimmed_value_but_sends_original_command(client):
 
     with pytest.raises(ValidationError):
         client.sandboxes.exec("wrk-1", " \n\t ")
+
+
+@pytest.mark.parametrize(
+    ("client_timeout", "timeout_sec", "expected"),
+    [(30, None, 75), (30, 1, 30), (30, 600, 615), (900, 60, 900)],
+)
+def test_exec_timeout_allows_result_without_shortening_client_timeout(
+    client, client_timeout, timeout_sec, expected
+):
+    client.config.timeout = client_timeout
+    client.sandbox_no_retry_session.request.return_value = Response(
+        body={"stdout": "", "stderr": "", "code": 124, "timed_out": True}
+    )
+    options = {} if timeout_sec is None else {"timeout_sec": timeout_sec}
+
+    result = client.sandboxes.exec("wrk-1", "sleep 60", **options)
+
+    assert result.timed_out is True
+    call = client.sandbox_no_retry_session.request.call_args
+    assert call.kwargs["timeout"] == expected
+    assert call.kwargs["json"]["timeout_sec"] == (
+        60 if timeout_sec is None else timeout_sec
+    )
+    assert client.config.timeout == client_timeout
+
+    client.session.request.return_value = Response(body=sandbox_body())
+    client.sandboxes.get("wrk-1")
+    assert client.session.request.call_args.kwargs["timeout"] == client_timeout
+    client.sandboxes.delete("wrk-1")
+    assert (
+        client.sandbox_no_retry_session.request.call_args.kwargs["timeout"]
+        == client_timeout
+    )
+
+
+@pytest.mark.parametrize("timeout_sec", [-1, 0, 601, True, False, 1.5, "60", None])
+def test_exec_rejects_invalid_timeout_before_request(client, timeout_sec):
+    with pytest.raises(ValidationError) as caught:
+        client.sandboxes.exec("wrk-1", "true", timeout_sec=timeout_sec)
+    assert caught.value.field == "timeout_sec"
+    client.session.request.assert_not_called()
+    client.sandbox_no_retry_session.request.assert_not_called()
+
+
+@pytest.mark.parametrize("error", [requests.ReadTimeout, requests.ConnectionError])
+def test_exec_does_not_repeat_post_on_transport_failure(client, error):
+    client.sandbox_no_retry_session.request.side_effect = error("transport failed")
+    with pytest.raises(error):
+        client.sandboxes.exec("wrk-1", "true")
+    client.sandbox_no_retry_session.request.assert_called_once()
+    client.session.request.assert_not_called()
 
 
 def test_update_rejects_empty_and_unsupported_inputs(client):

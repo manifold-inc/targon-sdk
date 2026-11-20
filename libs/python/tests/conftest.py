@@ -19,7 +19,13 @@ class Response:
 
 @pytest.fixture
 def client():
-    value = Client("pat_test", org="acme", base_url="https://api.test", max_retries=3)
+    value = Client(
+        "pat_test",
+        org="acme",
+        profile="test",
+        base_url="https://api.test",
+        max_retries=3,
+    )
     value.session.request = Mock()
     value.sandbox_no_retry_session.request = Mock()
     yield value
